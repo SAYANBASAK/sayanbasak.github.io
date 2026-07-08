@@ -2044,6 +2044,7 @@ const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
 const usersKey = "stationMadadHowrahUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
+const defaultSheetsWebAppUrl = "";
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 
 const qs = (selector) => document.querySelector(selector);
@@ -2060,6 +2061,10 @@ function loadState() {
 
 function saveComplaints() {
   localStorage.setItem(storageKey, JSON.stringify(state.complaints));
+}
+
+function getSheetsWebAppUrl() {
+  return localStorage.getItem(sheetsUrlKey) || defaultSheetsWebAppUrl;
 }
 
 function saveUsers() {
@@ -2139,6 +2144,7 @@ function login(username, password) {
   qs("#appShell").classList.remove("hidden");
   hydrateShell();
   setView("dashboard");
+  loadComplaintsFromGoogleSheet(false);
 }
 
 function logout() {
@@ -2183,7 +2189,10 @@ function renderDashboard() {
       <section class="panel">
         <div class="section-title">
           <h3>Recent station issues</h3>
-          <button class="chip-btn" data-jump="complaints">View all</button>
+          <div class="action-row compact-actions">
+            <button class="chip-btn" data-sync-sheets="1">Sync Google Sheet</button>
+            <button class="chip-btn" data-jump="complaints">View all</button>
+          </div>
         </div>
         <div class="complaint-list">
           ${list.slice(0, 4).map(complaintCard).join("") || emptyState("No complaints visible for this role.")}
@@ -2401,7 +2410,7 @@ function googleSheetPayload(item, action) {
 }
 
 async function syncComplaintToGoogleSheet(item, action) {
-  const webAppUrl = localStorage.getItem(sheetsUrlKey);
+  const webAppUrl = getSheetsWebAppUrl();
   if (!webAppUrl) return;
   try {
     await fetch(webAppUrl, {
@@ -2413,6 +2422,52 @@ async function syncComplaintToGoogleSheet(item, action) {
   } catch (error) {
     console.warn("Google Sheet sync failed", error);
   }
+}
+
+function mergeComplaints(remoteComplaints) {
+  const byId = new Map(state.complaints.map((item) => [item.id, item]));
+  remoteComplaints.forEach((remote) => {
+    const existing = byId.get(remote.id) || {};
+    byId.set(remote.id, {
+      ...existing,
+      ...remote,
+      history: existing.history?.length ? existing.history : remote.history,
+    });
+  });
+  state.complaints = [...byId.values()].sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
+  saveComplaints();
+}
+
+function loadComplaintsFromGoogleSheet(showMessage = true) {
+  const webAppUrl = getSheetsWebAppUrl();
+  if (!webAppUrl) {
+    if (showMessage) showToast("Google Sheet Web App URL is not configured.");
+    return;
+  }
+  const callbackName = `stationMadadSheetCallback_${Date.now()}`;
+  const separator = webAppUrl.includes("?") ? "&" : "?";
+  const script = document.createElement("script");
+  window[callbackName] = (response) => {
+    try {
+      if (response?.ok && Array.isArray(response.complaints)) {
+        mergeComplaints(response.complaints);
+        if (showMessage) showToast(`${response.complaints.length} complaints synced from Google Sheet`);
+        render();
+      } else if (showMessage) {
+        showToast("Google Sheet sync returned no data.");
+      }
+    } finally {
+      delete window[callbackName];
+      script.remove();
+    }
+  };
+  script.onerror = () => {
+    delete window[callbackName];
+    script.remove();
+    if (showMessage) showToast("Could not read Google Sheet. Check Apps Script deployment.");
+  };
+  script.src = `${webAppUrl}${separator}action=list&callback=${callbackName}`;
+  document.body.appendChild(script);
 }
 
 function openComplaint(id) {
@@ -2515,6 +2570,7 @@ function renderReports() {
           <p class="muted">Export the visible register for review meetings and department follow-up.</p>
         </div>
         <div class="action-row">
+          <button class="secondary-btn" data-sync-sheets="1">Sync Google Sheet</button>
           <button class="secondary-btn" id="exportCsv">Export CSV</button>
           <button class="secondary-btn" id="printReport">Print</button>
         </div>
@@ -2693,7 +2749,7 @@ function renderUserManagement() {
       </div>
       <div class="grid">
         <label>Apps Script Web App URL
-          <input id="sheetsWebAppUrl" value="${escapeHtml(localStorage.getItem(sheetsUrlKey) || "")}" placeholder="Paste deployed Apps Script Web App URL here" />
+          <input id="sheetsWebAppUrl" value="${escapeHtml(getSheetsWebAppUrl())}" placeholder="Paste deployed Apps Script Web App URL here" />
         </label>
         <div class="action-row">
           <button class="primary-btn" data-save-sheets-url="1">Save Google Sheet sync URL</button>
@@ -2992,6 +3048,7 @@ document.addEventListener("click", (event) => {
   const testSheets = event.target.closest("[data-test-sheets-sync]")?.dataset.testSheetsSync;
   const createUser = event.target.closest("[data-create-user]")?.dataset.createUser;
   const clearNewUser = event.target.closest("[data-clear-new-user]")?.dataset.clearNewUser;
+  const syncSheets = event.target.closest("[data-sync-sheets]")?.dataset.syncSheets;
   if (openId) openComplaint(openId);
   if (updateId) updateStatus(updateId);
   if (jump) setView(jump);
@@ -3002,6 +3059,7 @@ document.addEventListener("click", (event) => {
   if (testSheets) testSheetsSync();
   if (createUser) createNewUser();
   if (clearNewUser) clearNewUserForm();
+  if (syncSheets) loadComplaintsFromGoogleSheet(true);
 });
 
 qs("#loginForm").addEventListener("submit", (event) => {
@@ -3033,6 +3091,7 @@ if (state.user) {
   qs("#appShell").classList.remove("hidden");
   hydrateShell();
   setView("dashboard");
+  loadComplaintsFromGoogleSheet(false);
 }
 
 
