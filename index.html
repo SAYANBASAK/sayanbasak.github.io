@@ -2699,6 +2699,14 @@ function mergeComplaints(remoteComplaints) {
   saveComplaints();
 }
 
+function shouldRenderAfterSheetSync(showMessage) {
+  if (showMessage) return true;
+  const active = document.activeElement;
+  if (state.currentView === "newComplaint") return false;
+  if (active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)) return false;
+  return true;
+}
+
 function loadComplaintsFromGoogleSheet(showMessage = true) {
   const webAppUrl = getSheetsWebAppUrl();
   if (!webAppUrl) {
@@ -2713,7 +2721,7 @@ function loadComplaintsFromGoogleSheet(showMessage = true) {
       if (response?.ok && Array.isArray(response.complaints)) {
         mergeComplaints(response.complaints);
         if (showMessage) showToast(`${response.complaints.length} complaints synced from Google Sheet`);
-        render();
+        if (shouldRenderAfterSheetSync(showMessage)) render();
       } else if (showMessage) {
         showToast("Google Sheet sync returned no data.");
       }
