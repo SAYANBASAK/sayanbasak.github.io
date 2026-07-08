@@ -664,6 +664,26 @@ dialog::backdrop {
   padding: 18px;
 }
 
+.image-preview-block {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.image-preview-block span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.image-preview-block img {
+  width: min(100%, 520px);
+  max-height: 300px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -2200,7 +2220,8 @@ function loadState() {
   state.complaints = saved ? JSON.parse(saved) : seedComplaints;
   const savedUsers = localStorage.getItem(usersKey);
   state.users = savedUsers ? { ...demoUsers, ...JSON.parse(savedUsers) } : demoUsers;
-  const savedUser = localStorage.getItem(userKey);
+  localStorage.removeItem(userKey);
+  const savedUser = sessionStorage.getItem(userKey);
   state.user = savedUser ? JSON.parse(savedUser) : null;
 }
 
@@ -2218,8 +2239,9 @@ function saveUsers() {
 
 function saveUser() {
   if (state.user) {
-    localStorage.setItem(userKey, JSON.stringify(state.user));
+    sessionStorage.setItem(userKey, JSON.stringify(state.user));
   } else {
+    sessionStorage.removeItem(userKey);
     localStorage.removeItem(userKey);
   }
 }
@@ -2246,7 +2268,7 @@ function allowedComplaints() {
   if (["department", "control", "bo"].includes(state.user.role)) {
     return state.complaints.filter((item) => item.department === state.user.department);
   }
-  return state.complaints.filter((item) => item.station === state.user.station);
+  return state.complaints.filter((item) => item.station === state.user.station || item.raisedBy === state.user.name);
 }
 
 function setView(view) {
@@ -2509,7 +2531,7 @@ function renderNewComplaint() {
       <div class="grid three">
         <label>Category<select name="category">${categories.map((item) => `<option>${item}</option>`).join("")}</select></label>
         <label>Location<input name="location" placeholder="Platform / concourse / office" required /></label>
-        <label>Attachment<input name="attachment" type="file" /></label>
+        <label>Attachment image<input name="attachment" type="file" accept="image/*" /></label>
       </div>
       <label>Subject<input name="subject" maxlength="90" placeholder="Short issue title" required /></label>
       <label>Description<textarea name="description" placeholder="Describe the issue, urgency, and requested action" required></textarea></label>
@@ -2519,14 +2541,25 @@ function renderNewComplaint() {
   qs("#complaintForm").addEventListener("submit", submitComplaint);
 }
 
-function submitComplaint(event) {
+async function submitComplaint(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const attachmentFile = event.currentTarget.elements.attachment?.files?.[0];
   const next = state.complaints.length + 1;
   const created = new Date();
   const complaintDateTime = new Date(`${data.complaintDate}T${data.complaintTime || "00:00"}`);
   const due = new Date(complaintDateTime);
   due.setDate(complaintDateTime.getDate() + (priorityDurations[data.priority]?.days || 4));
+  const attachmentInfo = attachmentFile
+    ? {
+        name: attachmentFile.name,
+        type: attachmentFile.type,
+        size: attachmentFile.size,
+        uploadedAt: created.toISOString(),
+        dataUrl: await fileToDataUrl(attachmentFile),
+        uploadedBy: state.user.name,
+      }
+    : null;
   const complaint = {
     id: `HWH-2026-${String(next).padStart(4, "0")}`,
     station: data.station,
@@ -2544,14 +2577,17 @@ function submitComplaint(event) {
     complaintTime: data.complaintTime,
     submittedAt: created.toISOString(),
     dueAt: due.toISOString().slice(0, 10),
-    attachmentName: data.attachment?.name || "",
+    attachmentName: attachmentInfo?.name || "",
+    attachmentType: attachmentInfo?.type || "",
+    attachmentDataUrl: attachmentInfo?.dataUrl || "",
+    attachmentUploadedAt: attachmentInfo?.uploadedAt || "",
     history: [["Raised", state.user.name, `Complaint registered and sent to ${data.department}.`]],
   };
   state.complaints.unshift(complaint);
   saveComplaints();
   syncComplaintToGoogleSheet(complaint, "created");
   showToast(`Complaint ${complaint.id} submitted`);
-  setView("complaints");
+  setView("dashboard");
 }
 
 function renderComplaints() {
@@ -2641,6 +2677,34 @@ function fileToDataUrl(file) {
   });
 }
 
+function imagePreviewBlock(title, name, src, meta = "") {
+  if (!src) return `<p class="muted">${title}: ${name || "None"}</p>`;
+  return `
+    <div class="image-preview-block">
+      <strong>${title}: ${escapeHtml(name || "Image")}</strong>
+      ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
+      <a href="${escapeHtml(src)}" target="_blank" rel="noopener">
+        <img src="${escapeHtml(src)}" alt="${escapeHtml(name || title)}" />
+      </a>
+    </div>
+  `;
+}
+
+function attachmentPreview(item) {
+  const src = item.attachmentDataUrl || item.attachmentImageUrl || item.attachmentUrl || "";
+  return imagePreviewBlock("Attachment", item.attachmentName, src, item.attachmentUploadedAt ? `uploaded ${formatDateTime(item.attachmentUploadedAt)}` : "");
+}
+
+function rectificationPreview(item) {
+  const images = item.rectificationImages || [];
+  if (images.length) {
+    return images
+      .map((image) => imagePreviewBlock("Rectification image", image.name, image.dataUrl || image.url, image.uploadedAt ? `uploaded ${formatDateTime(image.uploadedAt)}` : ""))
+      .join("");
+  }
+  return item.rectificationImageUrl ? imagePreviewBlock("Rectification image", item.rectificationImageName, item.rectificationImageUrl) : "";
+}
+
 function googleSheetPayload(item, action) {
   const images = item.rectificationImages || [];
   const latestImage = images.length ? images[images.length - 1] : null;
@@ -2662,6 +2726,9 @@ function googleSheetPayload(item, action) {
     submittedAt: item.submittedAt || item.createdAt,
     dueAt: item.dueAt,
     attachmentName: item.attachmentName || "",
+    attachmentType: item.attachmentType || "",
+    attachmentDataUrl: item.attachmentDataUrl || "",
+    attachmentImageUrl: item.attachmentImageUrl || item.attachmentUrl || "",
     lastUpdatedAt: item.lastUpdatedAt || "",
     lastUpdatedBy: item.lastUpdatedBy || "",
     rectificationImageName: latestImage?.name || "",
@@ -2770,8 +2837,8 @@ function openComplaint(id) {
     <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
     <h4>${item.subject}</h4>
     <p>${item.description}</p>
-    <p class="muted">Attachment: ${item.attachmentName || "None"}</p>
-    ${(item.rectificationImages || []).map((image) => `<p class="muted">Rectification image: ${escapeHtml(image.name)} uploaded ${formatDateTime(image.uploadedAt)}</p>`).join("")}
+    ${attachmentPreview(item)}
+    ${rectificationPreview(item)}
     <div class="timeline">
       ${item.history.map(([status, actor, note]) => `<div class="timeline-item"><strong>${status} by ${actor}</strong><span>${note}</span></div>`).join("")}
     </div>
