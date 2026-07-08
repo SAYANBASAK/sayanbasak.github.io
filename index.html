@@ -2040,11 +2040,13 @@ let state = {
   currentView: "dashboard",
 };
 
+let googleSheetSyncTimer = null;
+
 const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
 const usersKey = "stationMadadHowrahUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
-const defaultSheetsWebAppUrl = "";
+const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbwZJecMfBGR1vUk_jHLx37mv9zId5xXexNxbwCvm3K2pmTEA4imqvde08D0XxSLQa9f/exec";
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 
 const qs = (selector) => document.querySelector(selector);
@@ -2145,9 +2147,11 @@ function login(username, password) {
   hydrateShell();
   setView("dashboard");
   loadComplaintsFromGoogleSheet(false);
+  startGoogleSheetAutoSync();
 }
 
 function logout() {
+  stopGoogleSheetAutoSync();
   state.user = null;
   saveUser();
   qs("#appShell").classList.add("hidden");
@@ -2470,6 +2474,19 @@ function loadComplaintsFromGoogleSheet(showMessage = true) {
   document.body.appendChild(script);
 }
 
+function startGoogleSheetAutoSync() {
+  stopGoogleSheetAutoSync();
+  if (!getSheetsWebAppUrl()) return;
+  googleSheetSyncTimer = window.setInterval(() => loadComplaintsFromGoogleSheet(false), 30000);
+}
+
+function stopGoogleSheetAutoSync() {
+  if (googleSheetSyncTimer) {
+    window.clearInterval(googleSheetSyncTimer);
+    googleSheetSyncTimer = null;
+  }
+}
+
 function openComplaint(id) {
   const item = state.complaints.find((complaint) => complaint.id === id);
   if (!item) return;
@@ -2751,6 +2768,7 @@ function renderUserManagement() {
         <label>Apps Script Web App URL
           <input id="sheetsWebAppUrl" value="${escapeHtml(getSheetsWebAppUrl())}" placeholder="Paste deployed Apps Script Web App URL here" />
         </label>
+        <p class="muted">After this URL is saved, this browser auto-syncs shared complaints every 30 seconds. Save the same URL on every computer, or embed it into index.html.</p>
         <div class="action-row">
           <button class="primary-btn" data-save-sheets-url="1">Save Google Sheet sync URL</button>
           <button class="secondary-btn" data-test-sheets-sync="1">Test sync latest complaint</button>
@@ -2992,6 +3010,7 @@ function saveSheetsUrl() {
     return;
   }
   localStorage.setItem(sheetsUrlKey, url);
+  startGoogleSheetAutoSync();
   showToast("Google Sheet sync URL saved");
 }
 
@@ -3092,6 +3111,7 @@ if (state.user) {
   hydrateShell();
   setView("dashboard");
   loadComplaintsFromGoogleSheet(false);
+  startGoogleSheetAutoSync();
 }
 
 
