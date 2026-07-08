@@ -799,6 +799,23 @@ dialog::backdrop {
           <p id="loginError" class="form-error" role="alert"></p>
           <button class="primary-btn" type="submit">Login</button>
         </form>
+        <script>
+          (function () {
+            function makeLoginCaptcha() {
+              var left = Math.floor(10 + Math.random() * 40);
+              var right = Math.floor(1 + Math.random() * 20);
+              window.stationMadadCaptchaAnswer = String(left + right);
+              var question = document.getElementById("captchaQuestion");
+              var answer = document.getElementById("captchaAnswer");
+              if (question) question.textContent = left + " + " + right + " =";
+              if (answer) answer.value = "";
+            }
+
+            window.stationMadadGenerateCaptcha = makeLoginCaptcha;
+            makeLoginCaptcha();
+            document.getElementById("refreshCaptcha")?.addEventListener("click", makeLoginCaptcha);
+          })();
+        </script>
       </main>
     </div>
 
@@ -2264,6 +2281,7 @@ function generateCaptcha() {
   const left = Math.floor(10 + Math.random() * 40);
   const right = Math.floor(1 + Math.random() * 20);
   captchaAnswer = String(left + right);
+  window.stationMadadCaptchaAnswer = captchaAnswer;
   const question = qs("#captchaQuestion");
   const answer = qs("#captchaAnswer");
   if (question) question.textContent = `${left} + ${right} =`;
@@ -2271,7 +2289,8 @@ function generateCaptcha() {
 }
 
 function login(username, password) {
-  if ((qs("#captchaAnswer")?.value || "").trim() !== captchaAnswer) {
+  const expectedCaptcha = captchaAnswer || window.stationMadadCaptchaAnswer || "";
+  if (!expectedCaptcha || (qs("#captchaAnswer")?.value || "").trim() !== expectedCaptcha) {
     qs("#loginError").textContent = "Please solve the captcha correctly.";
     generateCaptcha();
     return;
