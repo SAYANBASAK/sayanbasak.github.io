@@ -188,6 +188,23 @@ textarea:focus {
   gap: 8px;
 }
 
+.captcha-row {
+  display: grid;
+  grid-template-columns: auto minmax(80px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.captcha-row strong {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+}
+
 .primary-btn,
 .secondary-btn,
 .icon-btn,
@@ -353,6 +370,10 @@ textarea:focus {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.grid.five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .panel,
 .stat-card,
 .complaint-card {
@@ -463,6 +484,96 @@ textarea:focus {
 .pill.critical {
   background: var(--soft-red);
   color: var(--rail-red);
+}
+
+.sla-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.sla-box {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.sla-box strong {
+  font-size: 0.9rem;
+}
+
+.sla-box span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.sla-box.critical {
+  background: var(--soft-red);
+  color: var(--rail-red);
+}
+
+.alert-panel {
+  border-color: #f2b8b5;
+  background: #fffafa;
+}
+
+.alert-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr 120px 130px auto 80px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f3d4d2;
+}
+
+.alert-row:last-child {
+  border-bottom: 0;
+}
+
+.chart-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 240px) 1fr minmax(180px, auto);
+  gap: 10px;
+  align-items: center;
+}
+
+.chart-label {
+  font-weight: 800;
+  color: #344054;
+}
+
+.chart-track {
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e9eef5;
+}
+
+.chart-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--track-blue), var(--signal-green));
+}
+
+.chart-value {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.86rem;
+}
+
+.report-summary .stat-card p {
+  font-size: 1.35rem;
 }
 
 .timeline {
@@ -602,7 +713,14 @@ dialog::backdrop {
 
   .grid.two,
   .grid.three,
-  .grid.four {
+  .grid.four,
+  .grid.five {
+    grid-template-columns: 1fr;
+  }
+
+  .sla-grid,
+  .chart-row,
+  .alert-row {
     grid-template-columns: 1fr;
   }
 }
@@ -670,18 +788,17 @@ dialog::backdrop {
               <button type="button" id="togglePassword" class="icon-btn" aria-label="Show password">show</button>
             </div>
           </label>
+          <label>
+            Captcha verification
+            <div class="captcha-row">
+              <strong id="captchaQuestion"></strong>
+              <input id="captchaAnswer" name="captchaAnswer" inputmode="numeric" placeholder="Answer" required />
+              <button type="button" id="refreshCaptcha" class="icon-btn" aria-label="Refresh captcha">refresh</button>
+            </div>
+          </label>
           <p id="loginError" class="form-error" role="alert"></p>
           <button class="primary-btn" type="submit">Login</button>
         </form>
-
-        <div class="demo-box">
-          <strong>Prototype demo users</strong>
-          <button type="button" class="demo-login" data-user="smhwh">Station Manager</button>
-          <button type="button" class="demo-login" data-user="tihwh">Traffic Inspector</button>
-          <button type="button" class="demo-login" data-user="enggcontrol">Control Office</button>
-          <button type="button" class="demo-login" data-user="boengg">Branch Officer</button>
-          <button type="button" class="demo-login" data-user="superhwh">Super User</button>
-        </div>
       </main>
     </div>
 
@@ -1934,7 +2051,15 @@ const departments = [
   "Security",
   "Medical",
   "Personnel",
+  "Environment and Housekeeping Management (EnHM)",
 ];
+
+const priorityDurations = {
+  Low: { days: 7, label: "1 week" },
+  Medium: { days: 4, label: "4 days" },
+  High: { days: 2, label: "2 days" },
+  Critical: { days: 1, label: "1 day" },
+};
 
 const stationRecords = window.howrahStations || [];
 
@@ -2041,6 +2166,7 @@ let state = {
 };
 
 let googleSheetSyncTimer = null;
+let captchaAnswer = "";
 
 const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
@@ -2134,10 +2260,26 @@ function showToast(message) {
   setTimeout(() => toast.remove(), 2600);
 }
 
+function generateCaptcha() {
+  const left = Math.floor(10 + Math.random() * 40);
+  const right = Math.floor(1 + Math.random() * 20);
+  captchaAnswer = String(left + right);
+  const question = qs("#captchaQuestion");
+  const answer = qs("#captchaAnswer");
+  if (question) question.textContent = `${left} + ${right} =`;
+  if (answer) answer.value = "";
+}
+
 function login(username, password) {
+  if ((qs("#captchaAnswer")?.value || "").trim() !== captchaAnswer) {
+    qs("#loginError").textContent = "Please solve the captcha correctly.";
+    generateCaptcha();
+    return;
+  }
   const user = state.users[username.toLowerCase()];
   if (!user || user.password !== password) {
     qs("#loginError").textContent = "Please enter a valid username and password.";
+    generateCaptcha();
     return;
   }
   state.user = { username: username.toLowerCase(), ...user };
@@ -2156,6 +2298,7 @@ function logout() {
   saveUser();
   qs("#appShell").classList.add("hidden");
   qs("#loginPage").classList.remove("hidden");
+  generateCaptcha();
 }
 
 function hydrateShell() {
@@ -2179,9 +2322,100 @@ function statCounts(list) {
   };
 }
 
+function dueDateEnd(item) {
+  const due = new Date(item.dueAt || item.createdAt || Date.now());
+  due.setHours(23, 59, 59, 999);
+  return due;
+}
+
+function isFinalStatus(status) {
+  return status === "Resolved" || status === "Closed";
+}
+
+function isWithinTime(item) {
+  if (!isFinalStatus(item.status)) return false;
+  const completedAt = new Date(item.lastUpdatedAt || item.submittedAt || item.createdAt || Date.now());
+  return completedAt <= dueDateEnd(item);
+}
+
+function daysRemaining(item) {
+  return Math.ceil((dueDateEnd(item) - new Date()) / 86400000);
+}
+
+function dashboardAlerts(list) {
+  const monitoredRoles = ["supervisor", "control", "bo", "super", "admin"];
+  if (!monitoredRoles.includes(state.user.role)) return [];
+  return list
+    .filter((item) => !isFinalStatus(item.status))
+    .map((item) => ({
+      ...item,
+      remaining: daysRemaining(item),
+      noActivity: !item.lastUpdatedAt && (!item.history || item.history.length <= 1),
+    }))
+    .filter((item) => item.remaining <= 1 || item.noActivity)
+    .sort((a, b) => a.remaining - b.remaining)
+    .slice(0, 8);
+}
+
+function priorityDurationPanel() {
+  return `
+    <section class="panel">
+      <h3>Priority time limits</h3>
+      <div class="sla-grid">
+        ${Object.entries(priorityDurations).map(([priority, data]) => `<div class="sla-box ${priority.toLowerCase()}"><strong>${priority}</strong><span>${data.label}</span></div>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function alertPanel(alerts) {
+  return `
+    <section class="panel alert-panel">
+      <div class="section-title">
+        <h3>Time-limit and no-activity alerts</h3>
+      </div>
+      ${alerts.length ? alerts.map((item) => `
+        <div class="alert-row">
+          <strong>${item.id}</strong>
+          <span>${item.station}</span>
+          <span>${item.department}</span>
+          <span>${item.status}</span>
+          <span>${item.remaining < 0 ? `${Math.abs(item.remaining)} day overdue` : `${item.remaining} day left`}</span>
+          ${item.noActivity ? "<span class=\"pill critical\">No activity</span>" : ""}
+          <button class="secondary-btn" data-open="${item.id}">Open</button>
+        </div>
+      `).join("") : `<p class="muted">No complaints nearing time limit or pending without activity.</p>`}
+    </section>
+  `;
+}
+
+function departmentChart(list) {
+  const max = Math.max(1, ...departments.map((dept) => list.filter((item) => item.department === dept).length));
+  return `
+    <section class="panel">
+      <h3>Department performance</h3>
+      <div class="chart-list">
+        ${departments.map((dept) => {
+          const received = list.filter((item) => item.department === dept).length;
+          const closedWithin = list.filter((item) => item.department === dept && item.status === "Closed" && isWithinTime(item)).length;
+          const width = Math.max(4, Math.round((received / max) * 100));
+          return `
+            <div class="chart-row">
+              <div class="chart-label">${dept}</div>
+              <div class="chart-track"><span style="width:${width}%"></span></div>
+              <div class="chart-value">${received} received / ${closedWithin} closed in time</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderDashboard() {
   const list = allowedComplaints();
   const counts = statCounts(list);
+  const alerts = dashboardAlerts(list);
   qs("#dashboard").innerHTML = `
     <div class="grid four">
       <article class="stat-card"><h3>Total complaints</h3><p>${counts.total}</p></article>
@@ -2189,6 +2423,8 @@ function renderDashboard() {
       <article class="stat-card"><h3>In progress</h3><p>${counts.progress}</p></article>
       <article class="stat-card"><h3>Resolved</h3><p>${counts.resolved}</p></article>
     </div>
+    <div style="margin-top:18px">${priorityDurationPanel()}</div>
+    ${alerts.length || ["supervisor", "control", "bo", "super", "admin"].includes(state.user.role) ? `<div style="margin-top:18px">${alertPanel(alerts)}</div>` : ""}
     <div class="grid two" style="margin-top:18px">
       <section class="panel">
         <div class="section-title">
@@ -2212,6 +2448,7 @@ function renderDashboard() {
         </div>
       </section>
     </div>
+    <div style="margin-top:18px">${departmentChart(list)}</div>
   `;
 }
 
@@ -2269,8 +2506,8 @@ function submitComplaint(event) {
   const next = state.complaints.length + 1;
   const created = new Date();
   const complaintDateTime = new Date(`${data.complaintDate}T${data.complaintTime || "00:00"}`);
-  const due = new Date(created);
-  due.setDate(created.getDate() + (data.priority === "Critical" ? 1 : data.priority === "High" ? 2 : 5));
+  const due = new Date(complaintDateTime);
+  due.setDate(complaintDateTime.getDate() + (priorityDurations[data.priority]?.days || 4));
   const complaint = {
     id: `HWH-2026-${String(next).padStart(4, "0")}`,
     station: data.station,
@@ -2278,6 +2515,7 @@ function submitComplaint(event) {
     category: data.category,
     location: data.location,
     priority: data.priority,
+    priorityDuration: priorityDurations[data.priority]?.label || "",
     subject: data.subject,
     description: data.description,
     status: "Pending",
@@ -2339,7 +2577,7 @@ function complaintCard(item) {
         <div class="complaint-meta">
           <span class="pill ${statusClass(item.status)}">${item.status}</span>
           <span class="pill">${item.department}</span>
-          <span class="pill ${item.priority === "Critical" ? "critical" : ""}">${item.priority}</span>
+          <span class="pill ${item.priority === "Critical" ? "critical" : ""}">${item.priority} - ${priorityDurations[item.priority]?.label || item.priorityDuration || ""}</span>
           <span class="pill">${formatDateTime(item.submittedAt || item.createdAt)}</span>
           <span class="pill">Due ${formatDate(item.dueAt)}</span>
         </div>
@@ -2477,7 +2715,7 @@ function loadComplaintsFromGoogleSheet(showMessage = true) {
 function startGoogleSheetAutoSync() {
   stopGoogleSheetAutoSync();
   if (!getSheetsWebAppUrl()) return;
-  googleSheetSyncTimer = window.setInterval(() => loadComplaintsFromGoogleSheet(false), 30000);
+  googleSheetSyncTimer = window.setInterval(() => loadComplaintsFromGoogleSheet(false), 5000);
 }
 
 function stopGoogleSheetAutoSync() {
@@ -2578,6 +2816,201 @@ function renderDepartmentDesk() {
 }
 
 function renderReports() {
+  const list = filteredReportComplaints();
+  const summary = reportSummary(list);
+  qs("#reports").innerHTML = `
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <h3>Reports</h3>
+          <p class="muted">Daily, weekly, monthly, and yearly reports with department-wise bifurcation.</p>
+        </div>
+        <div class="action-row">
+          <button class="secondary-btn" data-sync-sheets="1">Sync Google Sheet</button>
+          <button class="secondary-btn" id="downloadExcelReport">Download Excel</button>
+          <button class="secondary-btn" id="downloadPdfReport">Download PDF</button>
+          <button class="secondary-btn" id="printReport">Print</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <select id="reportPeriod">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+        <input id="reportDate" type="date" value="${new Date().toISOString().slice(0, 10)}" />
+        <select id="reportDept">
+          <option value="">All departments</option>
+          ${departments.map((dept) => `<option>${dept}</option>`).join("")}
+        </select>
+      </div>
+      <div id="reportContent">
+        ${reportContentHtml(list, summary)}
+      </div>
+    </section>
+  `;
+  ["reportPeriod", "reportDate", "reportDept"].forEach((id) => qs(`#${id}`).addEventListener("input", refreshReport));
+  qs("#downloadExcelReport").addEventListener("click", downloadExcelReport);
+  qs("#downloadPdfReport").addEventListener("click", downloadPdfReport);
+  qs("#printReport").addEventListener("click", () => window.print());
+}
+
+function filteredReportComplaints() {
+  const period = qs("#reportPeriod")?.value || "daily";
+  const dateValue = qs("#reportDate")?.value || new Date().toISOString().slice(0, 10);
+  const dept = qs("#reportDept")?.value || "";
+  const anchor = new Date(`${dateValue}T00:00:00`);
+  const end = new Date(anchor);
+  if (period === "daily") end.setDate(anchor.getDate() + 1);
+  if (period === "weekly") end.setDate(anchor.getDate() + 7);
+  if (period === "monthly") end.setMonth(anchor.getMonth() + 1);
+  if (period === "yearly") end.setFullYear(anchor.getFullYear() + 1);
+  return allowedComplaints().filter((item) => {
+    const created = new Date(item.submittedAt || item.createdAt);
+    return created >= anchor && created < end && (!dept || item.department === dept);
+  });
+}
+
+function reportSummary(list) {
+  const total = list.length || 1;
+  const count = (status) => list.filter((item) => item.status === status).length;
+  return {
+    received: list.length,
+    pending: count("Pending"),
+    progress: count("In Progress"),
+    resolved: count("Resolved"),
+    closed: count("Closed"),
+    pct(value) {
+      return `${Math.round((value / total) * 100)}%`;
+    },
+  };
+}
+
+function reportContentHtml(list, summary) {
+  return `
+    <div class="grid five report-summary">
+      ${[
+        ["Received", summary.received],
+        ["Pending", `${summary.pending} (${summary.pct(summary.pending)})`],
+        ["In Progress", `${summary.progress} (${summary.pct(summary.progress)})`],
+        ["Resolved", `${summary.resolved} (${summary.pct(summary.resolved)})`],
+        ["Closed", `${summary.closed} (${summary.pct(summary.closed)})`],
+      ].map(([label, value]) => `<article class="stat-card"><h3>${label}</h3><p>${value}</p></article>`).join("")}
+    </div>
+    <div class="grid two" style="margin-top:18px">
+      ${departmentChart(list)}
+      <section class="panel">
+        <h3>Department-wise bifurcation</h3>
+        <div class="table-wrap" style="margin-top:14px">
+          <table>
+            <thead><tr><th>Department</th><th>Received</th><th>Pending</th><th>In Progress</th><th>Resolved</th><th>Closed</th><th>Closed in time</th></tr></thead>
+            <tbody>${departments.map((dept) => {
+              const deptItems = list.filter((item) => item.department === dept);
+              return `<tr><td>${dept}</td><td>${deptItems.length}</td><td>${deptItems.filter((i) => i.status === "Pending").length}</td><td>${deptItems.filter((i) => i.status === "In Progress").length}</td><td>${deptItems.filter((i) => i.status === "Resolved").length}</td><td>${deptItems.filter((i) => i.status === "Closed").length}</td><td>${deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length}</td></tr>`;
+            }).join("")}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <div class="table-wrap" style="margin-top:18px">
+      <table>
+        <thead><tr><th>ID</th><th>Station</th><th>Department</th><th>Subject</th><th>Priority</th><th>Status</th><th>Complaint time</th><th>Due</th></tr></thead>
+        <tbody>${list.map((item) => `<tr><td>${item.id}</td><td>${item.station}</td><td>${item.department}</td><td>${item.subject}</td><td>${item.priority}</td><td>${item.status}</td><td>${formatDateTime(item.createdAt)}</td><td>${formatDate(item.dueAt)}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function refreshReport() {
+  const list = filteredReportComplaints();
+  qs("#reportContent").innerHTML = reportContentHtml(list, reportSummary(list));
+}
+
+function reportRows() {
+  return filteredReportComplaints().map((item) => [item.id, item.station, item.department, item.category, item.subject, item.priority, item.status, item.complaintDate || "", item.complaintTime || "", item.submittedAt || item.createdAt, item.dueAt, item.lastUpdatedAt || "", item.lastUpdatedBy || ""]);
+}
+
+function downloadExcelReport() {
+  const list = filteredReportComplaints();
+  const summary = reportSummary(list);
+  const rows = [
+    ["StationMadad Howrah Report"],
+    [],
+    ["Summary"],
+    ["Received", summary.received],
+    ["Pending", summary.pending, summary.pct(summary.pending)],
+    ["In Progress", summary.progress, summary.pct(summary.progress)],
+    ["Resolved", summary.resolved, summary.pct(summary.resolved)],
+    ["Closed", summary.closed, summary.pct(summary.closed)],
+    [],
+    ["Department", "Received", "Pending", "In Progress", "Resolved", "Closed", "Closed In Time"],
+    ...departments.map((dept) => {
+      const deptItems = list.filter((item) => item.department === dept);
+      return [dept, deptItems.length, deptItems.filter((i) => i.status === "Pending").length, deptItems.filter((i) => i.status === "In Progress").length, deptItems.filter((i) => i.status === "Resolved").length, deptItems.filter((i) => i.status === "Closed").length, deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length];
+    }),
+    [],
+    ["ID", "Station", "Department", "Category", "Subject", "Priority", "Status", "Complaint Date", "Complaint Time", "Submitted At", "Due Date", "Last Updated At", "Last Updated By"],
+    ...reportRows(),
+  ];
+  const html = `<table>${rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</table>`;
+  downloadBlob(html, "stationmadad-report.xls", "application/vnd.ms-excel");
+}
+
+function downloadPdfReport() {
+  const summary = reportSummary(filteredReportComplaints());
+  const lines = [
+    "StationMadad Howrah Report",
+    `Received: ${summary.received}`,
+    `Pending: ${summary.pending} (${summary.pct(summary.pending)})`,
+    `In Progress: ${summary.progress} (${summary.pct(summary.progress)})`,
+    `Resolved: ${summary.resolved} (${summary.pct(summary.resolved)})`,
+    `Closed: ${summary.closed} (${summary.pct(summary.closed)})`,
+    "",
+    ...reportRows().slice(0, 35).map((row) => `${row[0]} | ${row[2]} | ${row[5]} | ${row[6]} | ${row[4]}`),
+  ];
+  downloadBlob(makeSimplePdf(lines), "stationmadad-report.pdf", "application/pdf");
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function makeSimplePdf(lines) {
+  const safe = (text) => String(text).replace(/[^\x20-\x7E]/g, "?").replace(/[()\\]/g, "\\
+
+    <script src="station-data.js"></script>
+    <script src="app.js"></script>").slice(0, 110);
+  const content = lines.map((line, index) => `BT /F1 10 Tf 40 ${780 - index * 16} Td (${safe(line)}) Tj ET`).join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+function renderLegacyReports() {
   const list = allowedComplaints();
   qs("#reports").innerHTML = `
     <section class="panel">
@@ -3103,8 +3536,10 @@ qs("#togglePassword").addEventListener("click", () => {
   const password = qs("#password");
   password.type = password.type === "password" ? "text" : "password";
 });
+qs("#refreshCaptcha").addEventListener("click", generateCaptcha);
 
 loadState();
+generateCaptcha();
 if (state.user) {
   qs("#loginPage").classList.add("hidden");
   qs("#appShell").classList.remove("hidden");
