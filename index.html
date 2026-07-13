@@ -1,133 +1,121 @@
-const SHEET_ID = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
-const SUMMARY_SHEET_NAME = "All Complaints";
-const TIME_ZONE = "Asia/Kolkata";
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StationMadad Howrah Division</title>
+    <meta
+      name="description"
+      content="StationMadad complaint and station issue management portal for Howrah Division."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="loginPage" class="login-shell">
+      <section class="login-visual" aria-label="Howrah Division">
+        <img
+          src="assets/howrah-division-wallpaper.png"
+          alt="Howrah Division Indian Railways artwork"
+        />
+        <div class="visual-overlay">
+          <p>Eastern Railway</p>
+          <h1>StationMadad</h1>
+          <span>Howrah Division station issue management portal</span>
+        </div>
+      </section>
 
-const HEADERS = [
-  "ID",
-  "Action",
-  "Station",
-  "Department",
-  "Category",
-  "Location",
-  "Priority",
-  "Subject",
-  "Description",
-  "Status",
-  "Raised By",
-  "Complaint Date",
-  "Complaint Time",
-  "Submitted At",
-  "Due At",
-  "Attachment Name",
-  "Last Updated At",
-  "Last Updated By",
-  "Rectification Image Name",
-  "Rectification Image URL",
-  "Synced At"
-];
+      <main class="login-panel">
+        <div class="brand-mark">
+          <div class="brand-emblem">SM</div>
+          <div>
+            <strong>StationMadad</strong>
+            <small>Howrah Division</small>
+          </div>
+        </div>
 
-function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, message: "StationMadad Google Sheet bridge is running." }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+        <form id="loginForm" class="login-form">
+          <h2>Login</h2>
+          <label>
+            Username / USMID
+            <input id="username" name="username" autocomplete="username" required />
+          </label>
+          <label>
+            Password
+            <div class="password-row">
+              <input id="password" name="password" type="password" autocomplete="current-password" required />
+              <button type="button" id="togglePassword" class="icon-btn" aria-label="Show password">show</button>
+            </div>
+          </label>
+          <p id="loginError" class="form-error" role="alert"></p>
+          <button class="primary-btn" type="submit">Login</button>
+        </form>
 
-function doPost(e) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const payload = JSON.parse(e.postData.contents || "{}");
-    const sheet = getDailyComplaintSheet_(payload);
-    const summarySheet = getOrCreateSheet_(SUMMARY_SHEET_NAME);
-    const imageUrl = saveRectificationImage_(payload);
-    const row = [
-      payload.id || "",
-      payload.action || "",
-      payload.station || "",
-      payload.department || "",
-      payload.category || "",
-      payload.location || "",
-      payload.priority || "",
-      payload.subject || "",
-      payload.description || "",
-      payload.status || "",
-      payload.raisedBy || "",
-      payload.complaintDate || "",
-      payload.complaintTime || "",
-      payload.submittedAt || "",
-      payload.dueAt || "",
-      payload.attachmentName || "",
-      payload.lastUpdatedAt || "",
-      payload.lastUpdatedBy || "",
-      payload.rectificationImageName || "",
-      imageUrl || "",
-      new Date().toISOString()
-    ];
+        <div class="demo-box">
+          <strong>Prototype demo users</strong>
+          <button type="button" class="demo-login" data-user="smhwh">Station Manager</button>
+          <button type="button" class="demo-login" data-user="tihwh">Traffic Inspector</button>
+          <button type="button" class="demo-login" data-user="enggcontrol">Control Office</button>
+          <button type="button" class="demo-login" data-user="boengg">Branch Officer</button>
+          <button type="button" class="demo-login" data-user="superhwh">Super User</button>
+        </div>
+      </main>
+    </div>
 
-    upsertComplaintRow_(sheet, row, payload.id);
-    upsertComplaintRow_(summarySheet, row, payload.id);
+    <div id="appShell" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="brand-mark">
+          <div class="brand-emblem">SM</div>
+          <div>
+            <strong>StationMadad</strong>
+            <small>Howrah Division</small>
+          </div>
+        </div>
 
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: true, id: payload.id }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: false, error: String(error) }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } finally {
-    lock.releaseLock();
-  }
-}
+        <nav class="nav-list" aria-label="Main navigation">
+          <button data-view="dashboard" class="active">Dashboard</button>
+          <button data-view="newComplaint">Raise Complaint</button>
+          <button data-view="complaints">Complaints</button>
+          <button data-view="departmentDesk">Department Desk</button>
+          <button data-view="reports">Reports</button>
+          <button data-view="settings">Masters</button>
+          <button data-view="userManagement">User Control</button>
+        </nav>
+      </aside>
 
-function getDailyComplaintSheet_(payload) {
-  const dateValue = payload.complaintDate || payload.submittedAt || new Date();
-  const sheetName = Utilities.formatDate(new Date(dateValue), TIME_ZONE, "dd-MMM-yyyy");
-  return getOrCreateSheet_(sheetName);
-}
+      <div class="work-area">
+        <header class="topbar">
+          <button id="menuBtn" class="icon-btn menu-btn" aria-label="Open menu">menu</button>
+          <div>
+            <p id="roleLabel">Station Manager</p>
+            <h2 id="pageTitle">Dashboard</h2>
+          </div>
+          <div class="topbar-actions">
+            <span id="userBadge" class="user-badge"></span>
+            <button id="logoutBtn" class="secondary-btn">Logout</button>
+          </div>
+        </header>
 
-function getOrCreateSheet_(sheetName) {
-  const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
-  let sheet = spreadsheet.getSheetByName(sheetName);
-  if (!sheet) sheet = spreadsheet.insertSheet(sheetName);
-  const existingHeaders = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
-  const needsHeaders = existingHeaders.join("") === "" || existingHeaders[0] !== "ID";
-  if (needsHeaders) {
-    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
-    sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold").setBackground("#f3f4f6");
-    sheet.autoResizeColumns(1, HEADERS.length);
-  }
-  return sheet;
-}
+        <main class="content">
+          <section id="dashboard" class="view active-view"></section>
+          <section id="newComplaint" class="view"></section>
+          <section id="complaints" class="view"></section>
+          <section id="departmentDesk" class="view"></section>
+          <section id="reports" class="view"></section>
+          <section id="settings" class="view"></section>
+          <section id="userManagement" class="view"></section>
+        </main>
+      </div>
+    </div>
 
-function upsertComplaintRow_(sheet, row, complaintId) {
-  const targetRow = findComplaintRow_(sheet, complaintId);
-  if (targetRow > 0) {
-    sheet.getRange(targetRow, 1, 1, HEADERS.length).setValues([row]);
-  } else {
-    sheet.appendRow(row);
-  }
-}
+    <dialog id="complaintDialog">
+      <div class="dialog-head">
+        <h3 id="dialogTitle">Complaint details</h3>
+        <button id="closeDialog" class="icon-btn" aria-label="Close">x</button>
+      </div>
+      <div id="dialogBody"></div>
+    </dialog>
 
-function findComplaintRow_(sheet, complaintId) {
-  if (!complaintId || sheet.getLastRow() < 2) return -1;
-  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-  for (let i = 0; i < values.length; i += 1) {
-    if (values[i][0] === complaintId) return i + 2;
-  }
-  return -1;
-}
-
-function saveRectificationImage_(payload) {
-  const dataUrl = payload.rectificationImageDataUrl || "";
-  if (!dataUrl || !dataUrl.startsWith("data:")) return "";
-  const parts = dataUrl.match(/^data:(.+);base64,(.+)$/);
-  if (!parts) return "";
-  const mimeType = parts[1];
-  const bytes = Utilities.base64Decode(parts[2]);
-  const filename = payload.rectificationImageName || `${payload.id || "complaint"}-rectification-image`;
-  const blob = Utilities.newBlob(bytes, mimeType, filename);
-  const file = DriveApp.createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return file.getUrl();
-}
+    <script src="station-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
