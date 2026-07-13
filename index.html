@@ -602,6 +602,23 @@ textarea:focus {
   padding: 7px 9px;
 }
 
+.user-search-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.user-search-panel label {
+  min-width: 0;
+}
+
+.user-search-panel input,
+.user-search-panel select {
+  min-width: 0;
+}
+
 .user-table td:last-child {
   min-width: 170px;
 }
@@ -2198,6 +2215,11 @@ const seedComplaints = [
 let state = {
   user: null,
   users: {},
+  inactiveUsers: {},
+  userFilters: {
+    active: {},
+    inactive: {},
+  },
   complaints: [],
   currentView: "dashboard",
 };
@@ -2208,6 +2230,7 @@ let captchaAnswer = "";
 const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
 const usersKey = "stationMadadHowrahUsers";
+const inactiveUsersKey = "stationMadadHowrahInactiveUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
 const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
 const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyOX6YbHPLfyl4v9nfmMku5Z5SwtECmZhd6COd19un7kvpmHwQXmKQCoSfchE1-Pcuf/exec";
@@ -2223,6 +2246,8 @@ function loadState() {
   state.complaints = saved ? JSON.parse(saved) : seedComplaints;
   const savedUsers = localStorage.getItem(usersKey);
   state.users = savedUsers ? { ...demoUsers, ...JSON.parse(savedUsers) } : demoUsers;
+  const savedInactiveUsers = localStorage.getItem(inactiveUsersKey);
+  state.inactiveUsers = savedInactiveUsers ? JSON.parse(savedInactiveUsers) : {};
   localStorage.removeItem(userKey);
   const savedUser = sessionStorage.getItem(userKey);
   state.user = savedUser ? JSON.parse(savedUser) : null;
@@ -2242,6 +2267,10 @@ function getUserSheetsWebAppUrl() {
 
 function saveUsers() {
   localStorage.setItem(usersKey, JSON.stringify(state.users));
+}
+
+function saveInactiveUsers() {
+  localStorage.setItem(inactiveUsersKey, JSON.stringify(state.inactiveUsers));
 }
 
 function saveUser() {
@@ -2318,6 +2347,11 @@ function generateCaptcha() {
 }
 
 async function login(username, password) {
+  qs("#loginError").textContent = "";
+  if (!username || !password) {
+    qs("#loginError").textContent = "Please enter username and password.";
+    return;
+  }
   const expectedCaptcha = captchaAnswer || window.stationMadadCaptchaAnswer || "";
   if (!expectedCaptcha || (qs("#captchaAnswer")?.value || "").trim() !== expectedCaptcha) {
     qs("#loginError").textContent = "Please solve the captcha correctly.";
@@ -2774,6 +2808,7 @@ function userSheetPayload(username, user, action = "saveUser") {
     stations: (user?.stations || []).join("; "),
     department: user?.department || "",
     phone: user?.phone || "",
+    reason: user?.reason || "",
     active: action === "deleteUser" ? "No" : "Yes",
     updatedBy: state.user?.username || "system",
   };
@@ -2798,10 +2833,19 @@ async function syncUsersToGoogleSheet(users) {
   await Promise.all(Object.entries(users).map(([username, user]) => syncUserToGoogleSheet(username, user, "saveUser")));
 }
 
-function mergeUsers(remoteUsers) {
-  if (!remoteUsers || !Object.keys(remoteUsers).length) return;
-  state.users = { ...demoUsers, ...state.users, ...remoteUsers };
+function mergeUsers(remoteUsers, inactiveUsers = [], inactiveUserDetails = {}) {
+  const inactiveSet = new Set((inactiveUsers || []).map((username) => String(username).toLowerCase()));
+  state.users = { ...demoUsers, ...state.users, ...(remoteUsers || {}) };
+  inactiveSet.forEach((username) => {
+    const existing = inactiveUserDetails[username] || state.users[username] || state.inactiveUsers[username] || demoUsers[username];
+    if (existing) state.inactiveUsers[username] = existing;
+    delete state.users[username];
+  });
+  Object.keys(remoteUsers || {}).forEach((username) => {
+    delete state.inactiveUsers[username];
+  });
   saveUsers();
+  saveInactiveUsers();
 }
 
 function loadUsersFromGoogleSheet(showMessage = false) {
@@ -2821,7 +2865,7 @@ function loadUsersFromGoogleSheet(showMessage = false) {
       window.clearTimeout(timer);
       try {
         if (response?.ok && response.users) {
-          mergeUsers(response.users);
+          mergeUsers(response.users, response.inactiveUsers || [], response.inactiveUserDetails || {});
           if (showMessage) showToast(`${Object.keys(response.users).length} users synced from Google Sheet`);
           if (state.currentView === "userManagement") renderUserManagement();
           finish(true);
@@ -3266,36 +3310,130 @@ function splitStations(value) {
     .filter(Boolean);
 }
 
-function userRows() {
-  return Object.entries(state.users)
+function userSearchPanel(kind) {
+  const filter = state.userFilters[kind] || {};
+  const title = kind === "active" ? "Active users" : "Inactive users";
+  return `
+    <div class="user-search-panel">
+      <div class="grid four">
+        <label>User Type
+          <select data-user-filter="${kind}" data-field="role">
+            <option value="">All</option>
+            ${["station-manager", "supervisor", "control", "bo", "department", "admin", "super"].map((role) => `<option value="${role}" ${filter.role === role ? "selected" : ""}>${roleName(role)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Name
+          <input data-user-filter="${kind}" data-field="name" value="${escapeHtml(filter.name || "")}" placeholder="Name" />
+        </label>
+        <label>Location
+          <input data-user-filter="${kind}" data-field="location" value="${escapeHtml(filter.location || "")}" placeholder="Station / location" />
+        </label>
+        <label>User-ID
+          <input data-user-filter="${kind}" data-field="username" value="${escapeHtml(filter.username || "")}" placeholder="USMID" />
+        </label>
+      </div>
+      <div class="grid four" style="margin-top:10px">
+        <label>Mobile
+          <input data-user-filter="${kind}" data-field="phone" value="${escapeHtml(filter.phone || "")}" placeholder="Mobile number" />
+        </label>
+        <label>Show
+          <select data-user-filter="${kind}" data-field="show">
+            <option value="all" ${filter.show !== "matched" ? "selected" : ""}>All</option>
+            <option value="matched" ${filter.show === "matched" ? "selected" : ""}>Matched only</option>
+          </select>
+        </label>
+        <label>Mobile Verified
+          <select data-user-filter="${kind}" data-field="mobileVerified">
+            <option value="">All</option>
+            <option value="yes" ${filter.mobileVerified === "yes" ? "selected" : ""}>With mobile</option>
+            <option value="no" ${filter.mobileVerified === "no" ? "selected" : ""}>Without mobile</option>
+          </select>
+        </label>
+        <label>User Category
+          <select data-user-filter="${kind}" data-field="category">
+            <option value="">All</option>
+            <option value="station" ${filter.category === "station" ? "selected" : ""}>Station</option>
+            <option value="department" ${filter.category === "department" ? "selected" : ""}>Department</option>
+            <option value="supervisory" ${filter.category === "supervisory" ? "selected" : ""}>Supervisory</option>
+          </select>
+        </label>
+      </div>
+      <div class="action-row">
+        <button class="primary-btn" data-apply-user-filter="${kind}">Search</button>
+        <button class="secondary-btn" data-reset-user-filter="${kind}">Reset</button>
+        <span class="muted">Matched ${title.toLowerCase()}: ${filteredUserEntries(kind).length}</span>
+      </div>
+    </div>
+  `;
+}
+
+function filteredUserEntries(kind) {
+  const source = kind === "inactive" ? state.inactiveUsers : state.users;
+  const filter = state.userFilters[kind] || {};
+  return Object.entries(source)
+    .filter(([username, user]) => {
+      const haystack = {
+        username,
+        name: user.name || "",
+        location: user.station || (user.stations || []).join("; "),
+        phone: user.phone || "",
+      };
+      if (filter.role && user.role !== filter.role) return false;
+      if (filter.name && !haystack.name.toLowerCase().includes(filter.name.toLowerCase())) return false;
+      if (filter.location && !haystack.location.toLowerCase().includes(filter.location.toLowerCase())) return false;
+      if (filter.username && !username.toLowerCase().includes(filter.username.toLowerCase())) return false;
+      if (filter.phone && !haystack.phone.includes(filter.phone)) return false;
+      if (filter.mobileVerified === "yes" && !haystack.phone) return false;
+      if (filter.mobileVerified === "no" && haystack.phone) return false;
+      if (filter.category === "station" && user.role !== "station-manager") return false;
+      if (filter.category === "department" && !["control", "bo", "department"].includes(user.role)) return false;
+      if (filter.category === "supervisory" && user.role !== "supervisor") return false;
+      return true;
+    })
     .sort(([a], [b]) => a.localeCompare(b))
+}
+
+function userRows(kind) {
+  const isInactive = kind === "inactive";
+  return filteredUserEntries(kind)
     .map(([username, user]) => `
       <tr>
-        <td><strong>${escapeHtml(username)}</strong></td>
-        <td><input data-user-edit="${escapeHtml(username)}" data-field="name" value="${escapeHtml(user.name)}" /></td>
+        <td><input type="checkbox" aria-label="Select ${escapeHtml(username)}" /></td>
+        <td><input data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="name" value="${escapeHtml(user.name)}" /></td>
         <td>
-          <select data-user-edit="${escapeHtml(username)}" data-field="role">
+          <select data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="role">
             ${["station-manager", "supervisor", "control", "bo", "department", "admin", "super"].map((role) => `<option value="${role}" ${user.role === role ? "selected" : ""}>${roleName(role)}</option>`).join("")}
           </select>
         </td>
-        <td><input data-user-edit="${escapeHtml(username)}" data-field="station" value="${escapeHtml(user.station)}" /></td>
-        <td><input data-user-edit="${escapeHtml(username)}" data-field="stations" value="${escapeHtml((user.stations || []).join("; "))}" /></td>
+        <td><strong>${escapeHtml(username)}</strong></td>
+        <td>${escapeHtml(roleName(user.role) || user.role || "")}</td>
+        <td><input data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="station" value="${escapeHtml(user.station || (user.stations || []).join("; "))}" /></td>
+        <td>Howrah</td>
+        <td>ER</td>
+        <td><input data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="phone" value="${escapeHtml(user.phone)}" /></td>
+        <td>${isInactive ? "De-activated" : "Activated"}</td>
         <td>
-          <select data-user-edit="${escapeHtml(username)}" data-field="department">
+          <select data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="newStatus">
+            <option value="active" ${!isInactive ? "selected" : ""}>Activated</option>
+            <option value="inactive" ${isInactive ? "selected" : ""}>De-activated</option>
+          </select>
+        </td>
+        <td>
+          <select data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="department">
             <option value="">None</option>
             <option value="All" ${user.department === "All" ? "selected" : ""}>All</option>
             ${departments.map((dept) => `<option ${user.department === dept ? "selected" : ""}>${dept}</option>`).join("")}
           </select>
         </td>
-        <td><input data-user-edit="${escapeHtml(username)}" data-field="phone" value="${escapeHtml(user.phone)}" /></td>
-        <td><input data-user-edit="${escapeHtml(username)}" data-field="password" value="${escapeHtml(user.password)}" /></td>
+        <td><input data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="reason" value="${escapeHtml(user.reason || "")}" placeholder="Reason" /></td>
+        <td><input data-user-edit="${escapeHtml(username)}" data-user-kind="${kind}" data-field="password" value="${escapeHtml(user.password)}" /></td>
         <td class="action-row">
-          <button class="secondary-btn" data-save-user="${escapeHtml(username)}">Save</button>
-          <button class="secondary-btn" data-delete-user="${escapeHtml(username)}">Delete</button>
+          <button class="secondary-btn" data-save-user="${escapeHtml(username)}" data-user-kind="${kind}">Save</button>
+          ${isInactive ? `<button class="secondary-btn" data-activate-user="${escapeHtml(username)}">Activate</button>` : `<button class="secondary-btn" data-delete-user="${escapeHtml(username)}">Deactivate</button>`}
         </td>
       </tr>
     `)
-    .join("");
+    .join("") || `<tr><td colspan="15">${emptyState(`No ${kind} users matched.`)}</td></tr>`;
 }
 
 function parseDelimited(text) {
@@ -3376,7 +3514,7 @@ function renderUserManagement() {
     <section class="panel">
       <div class="section-title">
         <div>
-          <h3>Google Sheet database</h3>
+          <h3>Active users</h3>
           <p class="muted">Complaint Sheet ID: ${googleSheetId}</p>
           <p class="muted">User ID Sheet ID: ${userGoogleSheetId}</p>
         </div>
@@ -3395,13 +3533,36 @@ function renderUserManagement() {
           <button class="secondary-btn" data-sync-users="1">Sync user IDs now</button>
         </div>
       </div>
+      ${userSearchPanel("active")}
+      <div class="table-wrap user-table" style="margin-top:14px">
+        <table>
+          <thead><tr><th>Select</th><th>Name</th><th>Designation</th><th>UserID</th><th>Type</th><th>Location</th><th>Division</th><th>Zone</th><th>Mobile No.</th><th>Current Account Status</th><th>New Account Status</th><th>Access Right</th><th>Reason</th><th>Password</th><th>Action</th></tr></thead>
+          <tbody>${userRows("active")}</tbody>
+        </table>
+      </div>
     </section>
     <section class="panel">
       <div class="section-title">
         <div>
-          <h3>Create new user</h3>
-          <p class="muted">Create one ID manually and save it into the system.</p>
+          <h3>Inactive users</h3>
+          <p class="muted">De-activated IDs cannot login. Activate them here if access is required again.</p>
         </div>
+      </div>
+      ${userSearchPanel("inactive")}
+      <div class="table-wrap user-table" style="margin-top:14px">
+        <table>
+          <thead><tr><th>Select</th><th>Name</th><th>Designation</th><th>UserID</th><th>Type</th><th>Location</th><th>Division</th><th>Zone</th><th>Mobile No.</th><th>Current Account Status</th><th>New Account Status</th><th>Access Right</th><th>Reason</th><th>Password</th><th>Action</th></tr></thead>
+          <tbody>${userRows("inactive")}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <h3>Create new users</h3>
+          <p class="muted">Create one ID manually or upload multiple IDs from Excel-exported CSV/TSV.</p>
+        </div>
+        <button class="secondary-btn" data-download-template="users">Download template</button>
       </div>
       <div class="grid three new-user-form">
         <label>User ID / USMID
@@ -3452,15 +3613,6 @@ function renderUserManagement() {
         <button class="primary-btn" data-create-user="1">Save new user</button>
         <button class="secondary-btn" data-clear-new-user="1">Clear form</button>
       </div>
-    </section>
-    <section class="panel">
-      <div class="section-title">
-        <div>
-          <h3>Super user - ID and password control</h3>
-          <p class="muted">Upload users from Excel-exported CSV/TSV, edit records, and control access for every role.</p>
-        </div>
-        <button class="secondary-btn" data-download-template="users">Download template</button>
-      </div>
       <div class="grid two">
         <label>Upload user file
           <input id="userUpload" type="file" accept=".csv,.tsv,.txt,.xls,.html,.xlsx" />
@@ -3477,17 +3629,6 @@ function renderUserManagement() {
         <span class="muted">username, password, name, role, station, stations, department, phone</span>
         <span class="muted">For supervisor users, put multiple stations in the stations column separated by semicolon. Example: HWH - HOWRAH; BDC - BANDEL</span>
         <span class="muted">For offline portability, use CSV/TSV from Excel. Simple Excel .xls HTML tables are also accepted. Native .xlsx needs conversion to CSV first.</span>
-      </div>
-    </section>
-    <section class="panel">
-      <div class="section-title">
-        <h3>Current users (${Object.keys(state.users).length})</h3>
-      </div>
-      <div class="table-wrap user-table">
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Station</th><th>Assigned stations</th><th>Department</th><th>Phone</th><th>Password</th><th>Action</th></tr></thead>
-          <tbody>${userRows()}</tbody>
-        </table>
       </div>
     </section>
   `;
@@ -3524,16 +3665,37 @@ async function importUsersFromFile(event) {
 }
 
 function saveEditedUser(username) {
-  const user = { ...state.users[username] };
-  qsa(`[data-user-edit="${CSS.escape(username)}"]`).forEach((input) => {
+  const kind = qs(`[data-save-user="${CSS.escape(username)}"]`)?.dataset.userKind || (state.inactiveUsers[username] ? "inactive" : "active");
+  const source = kind === "inactive" ? state.inactiveUsers : state.users;
+  const user = { ...source[username] };
+  let newStatus = kind === "inactive" ? "inactive" : "active";
+  qsa(`[data-user-edit="${CSS.escape(username)}"][data-user-kind="${kind}"]`).forEach((input) => {
     const field = input.dataset.field;
-    user[field] = field === "stations" ? splitStations(input.value) : input.value.trim();
+    if (field === "newStatus") {
+      newStatus = input.value;
+    } else if (field === "stations") {
+      user[field] = splitStations(input.value);
+    } else {
+      user[field] = input.value.trim();
+    }
   });
-  state.users[username] = user;
+  if (user.role === "supervisor") {
+    user.stations = splitStations(user.station);
+    user.station = "";
+  }
+  if (newStatus === "inactive") {
+    state.inactiveUsers[username] = user;
+    delete state.users[username];
+    syncUserToGoogleSheet(username, user, "deleteUser");
+  } else {
+    state.users[username] = user;
+    delete state.inactiveUsers[username];
+    syncUserToGoogleSheet(username, user, "saveUser");
+  }
   if (state.user.username === username) state.user = { ...state.user, ...user };
   saveUsers();
+  saveInactiveUsers();
   saveUser();
-  syncUserToGoogleSheet(username, user, "saveUser");
   showToast(`${username} saved`);
   renderUserManagement();
 }
@@ -3554,6 +3716,10 @@ function createNewUser() {
   }
   if (state.users[username]) {
     showToast("This user ID already exists. Edit it in Current users.");
+    return;
+  }
+  if (state.inactiveUsers[username]) {
+    showToast("This user ID exists in Inactive users. Activate it or save changes there.");
     return;
   }
   if (role === "station-manager" && !station) {
@@ -3579,7 +3745,9 @@ function createNewUser() {
     phone,
   };
   state.users[username] = user;
+  delete state.inactiveUsers[username];
   saveUsers();
+  saveInactiveUsers();
   syncUserToGoogleSheet(username, user, "saveUser");
   showToast(`${username} created and saved`);
   renderUserManagement();
@@ -3604,10 +3772,40 @@ function deleteUser(username) {
     return;
   }
   const user = state.users[username];
+  user.reason = user.reason || "De-activated by super user";
+  state.inactiveUsers[username] = user;
   delete state.users[username];
   saveUsers();
+  saveInactiveUsers();
   syncUserToGoogleSheet(username, user, "deleteUser");
-  showToast(`${username} deleted`);
+  showToast(`${username} de-activated`);
+  renderUserManagement();
+}
+
+function activateUser(username) {
+  const user = state.inactiveUsers[username];
+  if (!user) return;
+  user.reason = "";
+  state.users[username] = user;
+  delete state.inactiveUsers[username];
+  saveUsers();
+  saveInactiveUsers();
+  syncUserToGoogleSheet(username, user, "saveUser");
+  showToast(`${username} activated`);
+  renderUserManagement();
+}
+
+function updateUserFilter(kind) {
+  const filter = {};
+  qsa(`[data-user-filter="${kind}"]`).forEach((input) => {
+    filter[input.dataset.field] = input.value.trim();
+  });
+  state.userFilters[kind] = filter;
+  renderUserManagement();
+}
+
+function resetUserFilter(kind) {
+  state.userFilters[kind] = {};
   renderUserManagement();
 }
 
@@ -3694,6 +3892,7 @@ document.addEventListener("click", (event) => {
   const jump = event.target.closest("[data-jump]")?.dataset.jump;
   const saveUserId = event.target.closest("[data-save-user]")?.dataset.saveUser;
   const deleteUserId = event.target.closest("[data-delete-user]")?.dataset.deleteUser;
+  const activateUserId = event.target.closest("[data-activate-user]")?.dataset.activateUser;
   const downloadTemplate = event.target.closest("[data-download-template]")?.dataset.downloadTemplate;
   const saveSheets = event.target.closest("[data-save-sheets-url]")?.dataset.saveSheetsUrl;
   const testSheets = event.target.closest("[data-test-sheets-sync]")?.dataset.testSheetsSync;
@@ -3701,11 +3900,14 @@ document.addEventListener("click", (event) => {
   const clearNewUser = event.target.closest("[data-clear-new-user]")?.dataset.clearNewUser;
   const syncSheets = event.target.closest("[data-sync-sheets]")?.dataset.syncSheets;
   const syncUsers = event.target.closest("[data-sync-users]")?.dataset.syncUsers;
+  const applyUserFilter = event.target.closest("[data-apply-user-filter]")?.dataset.applyUserFilter;
+  const resetUserFilterId = event.target.closest("[data-reset-user-filter]")?.dataset.resetUserFilter;
   if (openId) openComplaint(openId);
   if (updateId) updateStatus(updateId);
   if (jump) setView(jump);
   if (saveUserId) saveEditedUser(saveUserId);
   if (deleteUserId) deleteUser(deleteUserId);
+  if (activateUserId) activateUser(activateUserId);
   if (downloadTemplate) downloadUserTemplate();
   if (saveSheets) saveSheetsUrl();
   if (testSheets) testSheetsSync();
@@ -3713,20 +3915,13 @@ document.addEventListener("click", (event) => {
   if (clearNewUser) clearNewUserForm();
   if (syncSheets) loadComplaintsFromGoogleSheet(true);
   if (syncUsers) loadUsersFromGoogleSheet(true);
+  if (applyUserFilter) updateUserFilter(applyUserFilter);
+  if (resetUserFilterId) resetUserFilter(resetUserFilterId);
 });
 
 qs("#loginForm").addEventListener("submit", (event) => {
   event.preventDefault();
-  login(qs("#username").value.trim(), qs("#password").value);
-});
-
-qsa(".demo-login").forEach((button) => {
-  button.addEventListener("click", () => {
-    const username = button.dataset.user;
-    qs("#username").value = username;
-    qs("#password").value = demoUsers[username].password;
-    login(username, demoUsers[username].password);
-  });
+  login(qs("#username").value.trim(), qs("#password").value.trim());
 });
 
 qsa(".nav-list button").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
