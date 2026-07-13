@@ -619,6 +619,15 @@ textarea:focus {
   min-width: 0;
 }
 
+.user-branch-grid {
+  margin: 14px 0;
+}
+
+.user-branch-btn {
+  min-height: 74px;
+  font-size: 1rem;
+}
+
 .user-table td:last-child {
   min-width: 170px;
 }
@@ -2220,12 +2229,14 @@ let state = {
     active: {},
     inactive: {},
   },
+  userControlView: "menu",
   complaints: [],
   currentView: "dashboard",
 };
 
 let googleSheetSyncTimer = null;
 let captchaAnswer = "";
+let loginRequestId = 0;
 
 const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
@@ -2347,6 +2358,7 @@ function generateCaptcha() {
 }
 
 async function login(username, password) {
+  const requestId = ++loginRequestId;
   qs("#loginError").textContent = "";
   if (!username || !password) {
     qs("#loginError").textContent = "Please enter username and password.";
@@ -2360,6 +2372,7 @@ async function login(username, password) {
   }
   qs("#loginError").textContent = "Checking user database...";
   await loadUsersFromGoogleSheet(false);
+  if (requestId !== loginRequestId) return;
   const user = state.users[username.toLowerCase()];
   if (!user || user.password !== password) {
     qs("#loginError").textContent = "Please enter a valid username and password.";
@@ -2378,11 +2391,15 @@ async function login(username, password) {
 }
 
 function logout() {
+  loginRequestId += 1;
   stopGoogleSheetAutoSync();
   state.user = null;
   saveUser();
   qs("#appShell").classList.add("hidden");
   qs("#loginPage").classList.remove("hidden");
+  qs("#loginError").textContent = "";
+  qs("#username").value = "";
+  qs("#password").value = "";
   generateCaptcha();
 }
 
@@ -2831,6 +2848,13 @@ async function syncUserToGoogleSheet(username, user, action = "saveUser") {
 
 async function syncUsersToGoogleSheet(users) {
   await Promise.all(Object.entries(users).map(([username, user]) => syncUserToGoogleSheet(username, user, "saveUser")));
+}
+
+async function syncAllUsersToGoogleSheet() {
+  const activeEntries = Object.entries(state.users).map(([username, user]) => syncUserToGoogleSheet(username, user, "saveUser"));
+  const inactiveEntries = Object.entries(state.inactiveUsers).map(([username, user]) => syncUserToGoogleSheet(username, user, "deleteUser"));
+  await Promise.all([...activeEntries, ...inactiveEntries]);
+  showToast(`${activeEntries.length + inactiveEntries.length} user records sent to User ID Google Sheet`);
 }
 
 function mergeUsers(remoteUsers, inactiveUsers = [], inactiveUserDetails = {}) {
@@ -3510,14 +3534,22 @@ function renderUserManagement() {
     qs("#userManagement").innerHTML = emptyState("Only the super user can manage IDs and passwords.");
     return;
   }
+  if (state.userControlView === "active") return renderUserControlActive();
+  if (state.userControlView === "inactive") return renderUserControlInactive();
+  if (state.userControlView === "create") return renderUserControlCreate();
   qs("#userManagement").innerHTML = `
     <section class="panel">
       <div class="section-title">
         <div>
-          <h3>Active users</h3>
+          <h3>User Control</h3>
           <p class="muted">Complaint Sheet ID: ${googleSheetId}</p>
           <p class="muted">User ID Sheet ID: ${userGoogleSheetId}</p>
         </div>
+      </div>
+      <div class="grid three user-branch-grid">
+        <button class="primary-btn user-branch-btn" data-user-control-view="active">Active users</button>
+        <button class="primary-btn user-branch-btn" data-user-control-view="inactive">Inactive users</button>
+        <button class="primary-btn user-branch-btn" data-user-control-view="create">Create new users</button>
       </div>
       <div class="grid">
         <label>Complaint Apps Script Web App URL
@@ -3531,7 +3563,26 @@ function renderUserManagement() {
           <button class="primary-btn" data-save-sheets-url="1">Save Google Sheet sync URL</button>
           <button class="secondary-btn" data-test-sheets-sync="1">Test sync latest complaint</button>
           <button class="secondary-btn" data-sync-users="1">Sync user IDs now</button>
+          <button class="secondary-btn" data-sync-all-users="1">Upload all current users to User ID Sheet</button>
         </div>
+      </div>
+    </section>
+  `;
+}
+
+function userControlBackButton() {
+  return `<button class="secondary-btn" data-user-control-view="menu">Back to User Control</button>`;
+}
+
+function renderUserControlActive() {
+  qs("#userManagement").innerHTML = `
+    <section class="panel">
+      <div class="section-title">
+        <div>
+          <h3>Active users</h3>
+          <p class="muted">Search and update active users. Use New Account Status to de-activate an ID.</p>
+        </div>
+        ${userControlBackButton()}
       </div>
       ${userSearchPanel("active")}
       <div class="table-wrap user-table" style="margin-top:14px">
@@ -3541,12 +3592,18 @@ function renderUserManagement() {
         </table>
       </div>
     </section>
+  `;
+}
+
+function renderUserControlInactive() {
+  qs("#userManagement").innerHTML = `
     <section class="panel">
       <div class="section-title">
         <div>
           <h3>Inactive users</h3>
           <p class="muted">De-activated IDs cannot login. Activate them here if access is required again.</p>
         </div>
+        ${userControlBackButton()}
       </div>
       ${userSearchPanel("inactive")}
       <div class="table-wrap user-table" style="margin-top:14px">
@@ -3556,13 +3613,21 @@ function renderUserManagement() {
         </table>
       </div>
     </section>
+  `;
+}
+
+function renderUserControlCreate() {
+  qs("#userManagement").innerHTML = `
     <section class="panel">
       <div class="section-title">
         <div>
           <h3>Create new users</h3>
           <p class="muted">Create one ID manually or upload multiple IDs from Excel-exported CSV/TSV.</p>
         </div>
-        <button class="secondary-btn" data-download-template="users">Download template</button>
+        <div class="action-row">
+          ${userControlBackButton()}
+          <button class="secondary-btn" data-download-template="users">Download template</button>
+        </div>
       </div>
       <div class="grid three new-user-form">
         <label>User ID / USMID
@@ -3900,6 +3965,8 @@ document.addEventListener("click", (event) => {
   const clearNewUser = event.target.closest("[data-clear-new-user]")?.dataset.clearNewUser;
   const syncSheets = event.target.closest("[data-sync-sheets]")?.dataset.syncSheets;
   const syncUsers = event.target.closest("[data-sync-users]")?.dataset.syncUsers;
+  const syncAllUsers = event.target.closest("[data-sync-all-users]")?.dataset.syncAllUsers;
+  const userControlView = event.target.closest("[data-user-control-view]")?.dataset.userControlView;
   const applyUserFilter = event.target.closest("[data-apply-user-filter]")?.dataset.applyUserFilter;
   const resetUserFilterId = event.target.closest("[data-reset-user-filter]")?.dataset.resetUserFilter;
   if (openId) openComplaint(openId);
@@ -3915,6 +3982,11 @@ document.addEventListener("click", (event) => {
   if (clearNewUser) clearNewUserForm();
   if (syncSheets) loadComplaintsFromGoogleSheet(true);
   if (syncUsers) loadUsersFromGoogleSheet(true);
+  if (syncAllUsers) syncAllUsersToGoogleSheet();
+  if (userControlView) {
+    state.userControlView = userControlView;
+    renderUserManagement();
+  }
   if (applyUserFilter) updateUserFilter(applyUserFilter);
   if (resetUserFilterId) resetUserFilter(resetUserFilterId);
 });
