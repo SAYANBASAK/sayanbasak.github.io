@@ -2209,7 +2209,9 @@ const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
 const usersKey = "stationMadadHowrahUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
+const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
 const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyOX6YbHPLfyl4v9nfmMku5Z5SwtECmZhd6COd19un7kvpmHwQXmKQCoSfchE1-Pcuf/exec";
+const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbwlZ1Yx7cSRVdyASRQTOZJrxkF7Dbxmx2DkTn1K1yJ69PKi74IGLqZ8PpGUEZ-_QDkGEQ/exec";
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 const userGoogleSheetId = "17Ou3oPoEuC_rKovbZzRXGQwYDxAcL05MfR1H1vWUc7Q";
 
@@ -2232,6 +2234,10 @@ function saveComplaints() {
 
 function getSheetsWebAppUrl() {
   return localStorage.getItem(sheetsUrlKey) || defaultSheetsWebAppUrl;
+}
+
+function getUserSheetsWebAppUrl() {
+  return localStorage.getItem(userSheetsUrlKey) || defaultUserSheetsWebAppUrl;
 }
 
 function saveUsers() {
@@ -2774,7 +2780,7 @@ function userSheetPayload(username, user, action = "saveUser") {
 }
 
 async function syncUserToGoogleSheet(username, user, action = "saveUser") {
-  const webAppUrl = getSheetsWebAppUrl();
+  const webAppUrl = getUserSheetsWebAppUrl();
   if (!webAppUrl) return;
   try {
     await fetch(webAppUrl, {
@@ -2799,7 +2805,7 @@ function mergeUsers(remoteUsers) {
 }
 
 function loadUsersFromGoogleSheet(showMessage = false) {
-  const webAppUrl = getSheetsWebAppUrl();
+  const webAppUrl = getUserSheetsWebAppUrl();
   if (!webAppUrl) return Promise.resolve(false);
   return new Promise((resolve) => {
     const callbackName = `stationMadadUsersCallback_${Date.now()}`;
@@ -3376,8 +3382,11 @@ function renderUserManagement() {
         </div>
       </div>
       <div class="grid">
-        <label>Apps Script Web App URL
+        <label>Complaint Apps Script Web App URL
           <input id="sheetsWebAppUrl" value="${escapeHtml(getSheetsWebAppUrl())}" placeholder="Paste deployed Apps Script Web App URL here" />
+        </label>
+        <label>User ID Apps Script Web App URL
+          <input id="userSheetsWebAppUrl" value="${escapeHtml(getUserSheetsWebAppUrl())}" placeholder="Paste deployed User ID Apps Script Web App URL here" />
         </label>
         <p class="muted">After this URL is saved, complaints auto-sync every 5 seconds and user IDs are checked from the shared user sheet at login.</p>
         <div class="action-row">
@@ -3622,14 +3631,19 @@ function downloadUserTemplate() {
 
 function saveSheetsUrl() {
   const url = qs("#sheetsWebAppUrl")?.value.trim();
+  const userUrl = qs("#userSheetsWebAppUrl")?.value.trim();
   if (!url) {
     localStorage.removeItem(sheetsUrlKey);
-    showToast("Google Sheet sync URL cleared");
-    return;
+  } else {
+    localStorage.setItem(sheetsUrlKey, url);
   }
-  localStorage.setItem(sheetsUrlKey, url);
+  if (!userUrl) {
+    localStorage.removeItem(userSheetsUrlKey);
+  } else {
+    localStorage.setItem(userSheetsUrlKey, userUrl);
+  }
   startGoogleSheetAutoSync();
-  showToast("Google Sheet sync URL saved");
+  showToast("Google Sheet sync URLs saved");
 }
 
 function testSheetsSync() {
