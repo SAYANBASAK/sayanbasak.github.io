@@ -2268,12 +2268,21 @@ function saveComplaints() {
   localStorage.setItem(storageKey, JSON.stringify(state.complaints));
 }
 
+function normalizeWebAppUrl(url) {
+  return String(url || "").trim();
+}
+
 function getSheetsWebAppUrl() {
-  return localStorage.getItem(sheetsUrlKey) || defaultSheetsWebAppUrl;
+  const saved = normalizeWebAppUrl(localStorage.getItem(sheetsUrlKey));
+  if (!saved || saved === defaultUserSheetsWebAppUrl) return defaultSheetsWebAppUrl;
+  return saved;
 }
 
 function getUserSheetsWebAppUrl() {
-  return localStorage.getItem(userSheetsUrlKey) || defaultUserSheetsWebAppUrl;
+  const saved = normalizeWebAppUrl(localStorage.getItem(userSheetsUrlKey));
+  const complaintUrl = getSheetsWebAppUrl();
+  if (!saved || saved === complaintUrl || saved === defaultSheetsWebAppUrl) return defaultUserSheetsWebAppUrl;
+  return saved;
 }
 
 function saveUsers() {
@@ -2753,10 +2762,13 @@ function imagePreviewBlock(title, name, src, meta = "") {
 
 function attachmentPreview(item) {
   const src = item.attachmentDataUrl || item.attachmentImageUrl || item.attachmentUrl || "";
+  const uploadButton = item.attachmentDataUrl && !item.attachmentImageUrl && !item.attachmentUrl
+    ? `<button class="secondary-btn" data-resync-attachment="${escapeHtml(item.id)}" style="margin-top:10px">Upload attachment image to Google Sheet</button>`
+    : "";
   if (!src && item.attachmentName) {
     return `<p class="muted">Attachment: ${escapeHtml(item.attachmentName)} (image not available from Google Sheet yet)</p>`;
   }
-  return imagePreviewBlock("Attachment", item.attachmentName, src, item.attachmentUploadedAt ? `uploaded ${formatDateTime(item.attachmentUploadedAt)}` : "");
+  return `${imagePreviewBlock("Attachment", item.attachmentName, src, item.attachmentUploadedAt ? `uploaded ${formatDateTime(item.attachmentUploadedAt)}` : "")}${uploadButton}`;
 }
 
 function rectificationPreview(item) {
@@ -2816,6 +2828,16 @@ async function syncComplaintToGoogleSheet(item, action) {
   }
 }
 
+function resyncAttachment(id) {
+  const item = state.complaints.find((complaint) => complaint.id === id);
+  if (!item?.attachmentDataUrl) {
+    showToast("Attachment image is not available on this computer.");
+    return;
+  }
+  syncComplaintToGoogleSheet(item, "updated");
+  showToast("Attachment image sent to Google Sheet bridge");
+}
+
 function userSheetPayload(username, user, action = "saveUser") {
   return {
     action,
@@ -2837,6 +2859,10 @@ function userSheetPayload(username, user, action = "saveUser") {
 async function syncUserToGoogleSheet(username, user, action = "saveUser") {
   const webAppUrl = getUserSheetsWebAppUrl();
   if (!webAppUrl) return;
+  if (webAppUrl === getSheetsWebAppUrl()) {
+    showToast("User ID Sheet URL is mixed with complaint Sheet URL.");
+    return;
+  }
   try {
     await fetch(webAppUrl, {
       method: "POST",
@@ -3896,8 +3922,12 @@ function downloadUserTemplate() {
 }
 
 function saveSheetsUrl() {
-  const url = qs("#sheetsWebAppUrl")?.value.trim();
-  const userUrl = qs("#userSheetsWebAppUrl")?.value.trim();
+  const url = normalizeWebAppUrl(qs("#sheetsWebAppUrl")?.value);
+  const userUrl = normalizeWebAppUrl(qs("#userSheetsWebAppUrl")?.value);
+  if (url && userUrl && url === userUrl) {
+    showToast("Complaint and User ID Apps Script URLs must be different.");
+    return;
+  }
   if (!url) {
     localStorage.removeItem(sheetsUrlKey);
   } else {
@@ -3972,6 +4002,7 @@ document.addEventListener("click", (event) => {
   const userControlView = event.target.closest("[data-user-control-view]")?.dataset.userControlView;
   const applyUserFilter = event.target.closest("[data-apply-user-filter]")?.dataset.applyUserFilter;
   const resetUserFilterId = event.target.closest("[data-reset-user-filter]")?.dataset.resetUserFilter;
+  const resyncAttachmentId = event.target.closest("[data-resync-attachment]")?.dataset.resyncAttachment;
   if (openId) openComplaint(openId);
   if (updateId) updateStatus(updateId);
   if (jump) setView(jump);
@@ -3992,6 +4023,7 @@ document.addEventListener("click", (event) => {
   }
   if (applyUserFilter) updateUserFilter(applyUserFilter);
   if (resetUserFilterId) resetUserFilter(resetUserFilterId);
+  if (resyncAttachmentId) resyncAttachment(resyncAttachmentId);
 });
 
 qs("#loginForm").addEventListener("submit", (event) => {
