@@ -2244,7 +2244,7 @@ const usersKey = "stationMadadHowrahUsers";
 const inactiveUsersKey = "stationMadadHowrahInactiveUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
 const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
-const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyOX6YbHPLfyl4v9nfmMku5Z5SwtECmZhd6COd19un7kvpmHwQXmKQCoSfchE1-Pcuf/exec";
+const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbwF8LIR9CD4iIUmYRxofgrvlPlVs1G5fD0guBQCSaUDUpVoY07mSsifwIWjUuJEpMKU/exec";
 const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbwlZ1Yx7cSRVdyASRQTOZJrxkF7Dbxmx2DkTn1K1yJ69PKi74IGLqZ8PpGUEZ-_QDkGEQ/exec";
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 const userGoogleSheetId = "17Ou3oPoEuC_rKovbZzRXGQwYDxAcL05MfR1H1vWUc7Q";
@@ -2753,6 +2753,9 @@ function imagePreviewBlock(title, name, src, meta = "") {
 
 function attachmentPreview(item) {
   const src = item.attachmentDataUrl || item.attachmentImageUrl || item.attachmentUrl || "";
+  if (!src && item.attachmentName) {
+    return `<p class="muted">Attachment: ${escapeHtml(item.attachmentName)} (image not available from Google Sheet yet)</p>`;
+  }
   return imagePreviewBlock("Attachment", item.attachmentName, src, item.attachmentUploadedAt ? `uploaded ${formatDateTime(item.attachmentUploadedAt)}` : "");
 }
 
