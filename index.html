@@ -2176,51 +2176,6 @@ window.howrahStations = [
 ];
 
 const demoUsers = {
-  smhwh: {
-    password: "howrah123",
-    name: "SM Howrah",
-    role: "station-manager",
-    station: "HWH - HOWRAH",
-    stations: [],
-    department: "",
-    phone: "9000000001",
-  },
-  tihwh: {
-    password: "ti123",
-    name: "TI Howrah Section",
-    role: "supervisor",
-    station: "",
-    stations: ["HWH - HOWRAH", "BDC - BANDEL", "BWN - BARDHAMAN"],
-    department: "Operating",
-    phone: "9000000002",
-  },
-  enggcontrol: {
-    password: "control123",
-    name: "Engineering Control",
-    role: "control",
-    station: "",
-    stations: [],
-    department: "Engineering",
-    phone: "9000000003",
-  },
-  boengg: {
-    password: "bo123",
-    name: "BO Engineering",
-    role: "bo",
-    station: "",
-    stations: [],
-    department: "Engineering",
-    phone: "9000000004",
-  },
-  adminhwh: {
-    password: "admin123",
-    name: "Sr. DCM Howrah",
-    role: "admin",
-    station: "Howrah Division",
-    stations: [],
-    department: "Commercial",
-    phone: "9000000005",
-  },
   superhwh: {
     password: "super123",
     name: "Super User HWH",
@@ -2291,63 +2246,7 @@ const categories = [
   "Not Listed",
 ];
 
-const seedComplaints = [
-  {
-    id: "HWH-2026-0001",
-    station: "HWH - HOWRAH",
-    department: "Engineering",
-    category: "Platform Surface",
-    location: "Platform 8 near FOB stairs",
-    priority: "High",
-    subject: "Broken platform edge tile",
-    description: "Damaged tiles near the foot over bridge need urgent attention before peak hours.",
-    status: "In Progress",
-    raisedBy: "SM Howrah",
-    createdAt: "2026-07-02T09:15:00",
-    dueAt: "2026-07-04",
-    attachmentName: "platform-edge.jpg",
-    history: [
-      ["Raised", "SM Howrah", "Complaint registered and sent to Engineering."],
-      ["Assigned", "Divisional Admin", "Marked to section engineer for inspection."],
-      ["In Progress", "Engineering", "Material arranged; work planned in traffic block."],
-    ],
-  },
-  {
-    id: "HWH-2026-0002",
-    station: "BDC - BANDEL",
-    department: "Electrical",
-    category: "Lighting",
-    location: "Circulating area",
-    priority: "Medium",
-    subject: "Two high mast lights not working",
-    description: "Lighting is inadequate near the auto stand after sunset.",
-    status: "Pending",
-    raisedBy: "SM Bandel",
-    createdAt: "2026-07-02T18:40:00",
-    dueAt: "2026-07-05",
-    attachmentName: "",
-    history: [["Raised", "SM Bandel", "Complaint registered and sent to Electrical."]],
-  },
-  {
-    id: "HWH-2026-0003",
-    station: "BWN - BARDHAMAN",
-    department: "Commercial",
-    category: "UTS and PRS",
-    location: "Booking office",
-    priority: "Low",
-    subject: "Queue railing alignment required",
-    description: "Passenger queue spills into the entrance corridor during morning rush.",
-    status: "Closed",
-    raisedBy: "SM Barddhaman",
-    createdAt: "2026-07-01T11:20:00",
-    dueAt: "2026-07-06",
-    attachmentName: "",
-    history: [
-      ["Raised", "SM Barddhaman", "Complaint registered and sent to Commercial."],
-      ["Closed", "Commercial", "Queue manager relocated and sign board placed."],
-    ],
-  },
-];
+const seedComplaints = [];
 
 let state = {
   user: null,
@@ -2363,18 +2262,22 @@ let state = {
 };
 
 let googleSheetSyncTimer = null;
+let inactivityTimer = null;
 let captchaAnswer = "";
 let loginRequestId = 0;
 const statusUpdatesInProgress = new Set();
+const inactivityLimitMs = 5 * 60 * 1000;
 
 const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
 const usersKey = "stationMadadHowrahUsers";
 const inactiveUsersKey = "stationMadadHowrahInactiveUsers";
+const resetVersionKey = "stationMadadHowrahResetVersion";
+const dataResetVersion = "2026-07-14-hwh-live-testing-reset";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
 const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
-const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyFc23Wd1mfLFL2T5bGCVfcZoZRKBGV0J2qhWKLspFjxR7AgqLXOnLksPuKKRTQs6a5pg/exec";
-const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyL4YUoEOFY6QYvww2gEad22DeSpb013NHgTCua6ErwFczIXwLF14XqCmJoNPfgxjaFLQ/exec";
+const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbx_4vyE-yun6J4hGCNzG4v9Zo48YrFFYX5hJRE0NgRYSict8wfLBWrqtWP0joC4mp7r/exec";
+const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbxt-nyj4dadKN6p5yo3vi5-ebSsgOfYadf-CvW3joiH3zWAUoAB2WBFJhvsbZlLTTpsQQ/exec";
 const legacyWebAppUrls = new Set([
   "https://script.google.com/macros/s/AKfycbwZJecMfBGR1vUk_jHLx37mv9zId5xXexNxbwCvm3K2pmTEA4imqvde08D0XxSLQa9f/exec",
   "https://script.google.com/macros/s/AKfycbyOX6YbHPLfyl4v9nfmMku5Z5SwtECmZhd6COd19un7kvpmHwQXmKQCoSfchE1-Pcuf/exec",
@@ -2386,6 +2289,8 @@ const legacyWebAppUrls = new Set([
   "https://script.google.com/macros/s/AKfycby8C2jIzuCByAvK1_g5e80AijE1lMriCy3ZcU5XgMC31gG7UtpfARNN-GKvk8WtfQRY1Q/exec",
   "https://script.google.com/macros/s/AKfycbys2Ypr8OodyLRKhk1H0cOn21RTpyUBlJLYYDTihFa7sw-FmWtOzSAIU8b44nvnDwc/exec",
   "https://script.google.com/macros/s/AKfycbwJcXaK_xBvsiqN6dVGI0skxnZPeZ8k0Pyc8D5ADcXGJQ4x_dWGcU6inxw9w833sErX6A/exec",
+  "https://script.google.com/macros/s/AKfycbyFc23Wd1mfLFL2T5bGCVfcZoZRKBGV0J2qhWKLspFjxR7AgqLXOnLksPuKKRTQs6a5pg/exec",
+  "https://script.google.com/macros/s/AKfycbyL4YUoEOFY6QYvww2gEad22DeSpb013NHgTCua6ErwFczIXwLF14XqCmJoNPfgxjaFLQ/exec",
 ]);
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 const userGoogleSheetId = "17Ou3oPoEuC_rKovbZzRXGQwYDxAcL05MfR1H1vWUc7Q";
@@ -2394,6 +2299,14 @@ const qs = (selector) => document.querySelector(selector);
 const qsa = (selector) => [...document.querySelectorAll(selector)];
 
 function loadState() {
+  if (localStorage.getItem(resetVersionKey) !== dataResetVersion) {
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(usersKey);
+    localStorage.removeItem(inactiveUsersKey);
+    localStorage.removeItem(userKey);
+    sessionStorage.removeItem(userKey);
+    localStorage.setItem(resetVersionKey, dataResetVersion);
+  }
   const saved = localStorage.getItem(storageKey);
   state.complaints = saved ? JSON.parse(saved) : seedComplaints;
   const savedUsers = localStorage.getItem(usersKey);
@@ -2506,6 +2419,31 @@ function showToast(message) {
   setTimeout(() => toast.remove(), 2600);
 }
 
+function resetInactivityTimer() {
+  if (!state.user) return;
+  if (inactivityTimer) window.clearTimeout(inactivityTimer);
+  inactivityTimer = window.setTimeout(() => {
+    if (!state.user) return;
+    logout({ reason: "inactive" });
+  }, inactivityLimitMs);
+}
+
+function startInactivityTimer() {
+  stopInactivityTimer();
+  resetInactivityTimer();
+}
+
+function stopInactivityTimer() {
+  if (inactivityTimer) {
+    window.clearTimeout(inactivityTimer);
+    inactivityTimer = null;
+  }
+}
+
+function recordUserActivity() {
+  if (state.user) resetInactivityTimer();
+}
+
 function generateCaptcha() {
   const left = Math.floor(10 + Math.random() * 40);
   const right = Math.floor(1 + Math.random() * 20);
@@ -2548,16 +2486,18 @@ async function login(username, password) {
   loadUsersFromGoogleSheet(false);
   loadComplaintsFromGoogleSheet(false);
   startGoogleSheetAutoSync();
+  startInactivityTimer();
 }
 
-function logout() {
+function logout(options = {}) {
   loginRequestId += 1;
   stopGoogleSheetAutoSync();
+  stopInactivityTimer();
   state.user = null;
   saveUser();
   qs("#appShell").classList.add("hidden");
   qs("#loginPage").classList.remove("hidden");
-  qs("#loginError").textContent = "";
+  qs("#loginError").textContent = options.reason === "inactive" ? "Logged out due to 5 minutes of inactivity. Please login again." : "";
   qs("#username").value = "";
   qs("#password").value = "";
   generateCaptcha();
@@ -3062,12 +3002,10 @@ function compactHistory(history = []) {
 function compactImages(images = []) {
   const seen = new Set();
   return images.filter((image) => {
-    const key = [
-      image.name || "",
-      image.uploadedAt || "",
-      image.url || "",
-      image.dataUrl ? image.dataUrl.slice(0, 120) : "",
-    ].join("|");
+    const normalizedName = String(image.name || "").trim().toLowerCase();
+    const driveId = driveFileIdFromUrl(image.url || "");
+    const dataFingerprint = image.fingerprint || (image.dataUrl ? `${image.dataUrl.length}:${image.dataUrl.slice(-160)}` : "");
+    const key = driveId || dataFingerprint || normalizedName;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -3452,6 +3390,7 @@ async function updateStatus(id) {
         uploadedAt: new Date().toISOString(),
         uploadedBy: state.user.name,
         dataUrl: compressedDataUrl,
+        fingerprint: `${imageFile.name.toLowerCase()}|${compressedDataUrl.length}|${compressedDataUrl.slice(-160)}`,
       };
       imageInfoForSync = {
         ...imageInfo,
@@ -3488,7 +3427,7 @@ async function updateStatus(id) {
     }
     saveComplaints();
     const syncItem = imageInfoForSync
-      ? { ...item, rectificationImages: compactImages([...(item.rectificationImages || []), imageInfoForSync]) }
+      ? { ...item, rectificationImages: compactImages(item.rectificationImages || []) }
       : item;
     syncComplaintToGoogleSheet(syncItem, "updated");
     qs("#complaintDialog").close();
@@ -4493,6 +4432,10 @@ document.addEventListener("change", (event) => {
   if (event.target?.id === "attendingAction") updateAttendingFields();
 });
 
+["click", "keydown", "mousemove", "scroll", "touchstart", "pointerdown"].forEach((eventName) => {
+  document.addEventListener(eventName, recordUserActivity, { passive: true });
+});
+
 qs("#loginForm").addEventListener("submit", (event) => {
   event.preventDefault();
   login(qs("#username").value.trim(), qs("#password").value.trim());
@@ -4517,6 +4460,7 @@ if (state.user) {
   setView("dashboard");
   loadComplaintsFromGoogleSheet(false);
   startGoogleSheetAutoSync();
+  startInactivityTimer();
 }
 
 
