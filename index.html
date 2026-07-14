@@ -701,6 +701,13 @@ dialog::backdrop {
   font-size: 13px;
 }
 
+.image-open-link {
+  width: fit-content;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .image-preview-block img {
   width: min(100%, 520px);
   max-height: 300px;
@@ -2763,15 +2770,31 @@ function fileToDataUrl(file) {
   });
 }
 
+function driveFileIdFromUrl(url) {
+  const value = String(url || "");
+  return value.match(/[?&]id=([^&]+)/)?.[1]
+    || value.match(/\/file\/d\/([^/]+)/)?.[1]
+    || value.match(/\/d\/([^/]+)/)?.[1]
+    || "";
+}
+
+function previewImageUrl(src) {
+  const fileId = driveFileIdFromUrl(src);
+  if (fileId) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1200`;
+  return src;
+}
+
 function imagePreviewBlock(title, name, src, meta = "") {
   if (!src) return `<p class="muted">${title}: ${name || "None"}</p>`;
+  const previewSrc = previewImageUrl(src);
   return `
     <div class="image-preview-block">
       <strong>${title}: ${escapeHtml(name || "Image")}</strong>
       ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
       <a href="${escapeHtml(src)}" target="_blank" rel="noopener">
-        <img src="${escapeHtml(src)}" alt="${escapeHtml(name || title)}" />
+        <img src="${escapeHtml(previewSrc)}" alt="${escapeHtml(name || title)}" loading="lazy" referrerpolicy="no-referrer" />
       </a>
+      ${previewSrc !== src ? `<a class="image-open-link" href="${escapeHtml(src)}" target="_blank" rel="noopener">Open full image</a>` : ""}
     </div>
   `;
 }
