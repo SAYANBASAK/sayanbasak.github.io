@@ -476,6 +476,11 @@ textarea:focus {
   color: #175cd3;
 }
 
+.pill.partial {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
 .pill.resolved {
   background: var(--soft-green);
   color: var(--signal-green);
@@ -570,6 +575,113 @@ textarea:focus {
   color: var(--muted);
   font-weight: 800;
   font-size: 0.86rem;
+}
+
+.stacked-chart {
+  display: flex;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #e9eef5;
+  margin: 16px 0 14px;
+}
+
+.stacked-chart.slim {
+  height: 18px;
+}
+
+.stacked-chart span {
+  display: block;
+  min-width: 0;
+}
+
+.legend-grid {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.legend-grid span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-grid i {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.pending,
+.legend-grid i.pending {
+  background: var(--notice-yellow);
+}
+
+.progress,
+.legend-grid i.progress {
+  background: var(--track-blue);
+}
+
+.partial,
+.legend-grid i.partial {
+  background: #7c3aed;
+}
+
+.closed,
+.legend-grid i.closed {
+  background: var(--signal-green);
+}
+
+.late,
+.legend-grid i.late {
+  background: var(--rail-red);
+}
+
+.mini-bar-grid {
+  min-height: 160px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.mini-bar-item {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.mini-bar {
+  width: 100%;
+  max-width: 42px;
+  border-radius: 8px 8px 3px 3px;
+  background: var(--track-blue);
+}
+
+.mini-bar.critical {
+  background: var(--rail-red);
+}
+
+.mini-bar.high {
+  background: #f97316;
+}
+
+.mini-bar.medium {
+  background: var(--notice-yellow);
+}
+
+.mini-bar.low {
+  background: var(--signal-green);
 }
 
 .report-summary .stat-card p {
@@ -2225,14 +2337,14 @@ const seedComplaints = [
     priority: "Low",
     subject: "Queue railing alignment required",
     description: "Passenger queue spills into the entrance corridor during morning rush.",
-    status: "Resolved",
+    status: "Closed",
     raisedBy: "SM Barddhaman",
     createdAt: "2026-07-01T11:20:00",
     dueAt: "2026-07-06",
     attachmentName: "",
     history: [
       ["Raised", "SM Barddhaman", "Complaint registered and sent to Commercial."],
-      ["Resolved", "Commercial", "Queue manager relocated and sign board placed."],
+      ["Closed", "Commercial", "Queue manager relocated and sign board placed."],
     ],
   },
 ];
@@ -2355,12 +2467,12 @@ function roleName(role) {
 
 function allowedComplaints() {
   if (!state.user) return [];
-  if (["admin", "super"].includes(state.user.role)) return state.complaints;
+  if (["admin", "super", "bo"].includes(state.user.role)) return state.complaints;
   if (state.user.role === "supervisor") {
     const supervised = state.user.stations || [];
     return state.complaints.filter((item) => supervised.includes(item.station));
   }
-  if (["department", "control", "bo"].includes(state.user.role)) {
+  if (["department", "control"].includes(state.user.role)) {
     return state.complaints.filter((item) => item.department === state.user.department);
   }
   return state.complaints.filter((item) => item.station === state.user.station || item.raisedBy === state.user.name);
@@ -2468,7 +2580,8 @@ function statCounts(list) {
     total: list.length,
     pending: list.filter((item) => item.status === "Pending").length,
     progress: list.filter((item) => item.status === "In Progress").length,
-    resolved: list.filter((item) => item.status === "Resolved" || item.status === "Closed").length,
+    partial: list.filter((item) => item.status === "Partial Resolution").length,
+    closed: list.filter((item) => item.status === "Closed").length,
   };
 }
 
@@ -2479,7 +2592,7 @@ function dueDateEnd(item) {
 }
 
 function isFinalStatus(status) {
-  return status === "Resolved" || status === "Closed";
+  return status === "Closed";
 }
 
 function isWithinTime(item) {
@@ -2562,6 +2675,65 @@ function departmentChart(list) {
   `;
 }
 
+function statusChart(list) {
+  const counts = statCounts(list);
+  const segments = [
+    ["Pending", counts.pending, "pending"],
+    ["In Progress", counts.progress, "progress"],
+    ["Partial Resolution", counts.partial, "partial"],
+    ["Closed", counts.closed, "closed"],
+  ];
+  const total = Math.max(1, counts.total);
+  return `
+    <section class="panel">
+      <h3>Status spread</h3>
+      <div class="stacked-chart" aria-label="Complaint status spread">
+        ${segments.map(([label, value, kind]) => `<span class="${kind}" style="width:${Math.max(value ? 5 : 0, Math.round((value / total) * 100))}%" title="${label}: ${value}"></span>`).join("")}
+      </div>
+      <div class="legend-grid">
+        ${segments.map(([label, value, kind]) => `<span><i class="${kind}"></i>${label}: <strong>${value}</strong></span>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function priorityChart(list) {
+  const priorities = ["Critical", "High", "Medium", "Low"];
+  const max = Math.max(1, ...priorities.map((priority) => list.filter((item) => item.priority === priority).length));
+  return `
+    <section class="panel">
+      <h3>Priority load</h3>
+      <div class="mini-bar-grid">
+        ${priorities.map((priority) => {
+          const count = list.filter((item) => item.priority === priority).length;
+          const height = Math.max(count ? 16 : 4, Math.round((count / max) * 110));
+          return `<div class="mini-bar-item"><div class="mini-bar ${priority.toLowerCase()}" style="height:${height}px"></div><strong>${count}</strong><span>${priority}</span></div>`;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function closureChart(list) {
+  const closed = list.filter((item) => item.status === "Closed");
+  const inTime = closed.filter(isWithinTime).length;
+  const late = Math.max(0, closed.length - inTime);
+  const denominator = Math.max(1, closed.length);
+  return `
+    <section class="panel">
+      <h3>Closure discipline</h3>
+      <div class="stacked-chart slim">
+        <span class="closed" style="width:${Math.round((inTime / denominator) * 100)}%" title="Closed in time: ${inTime}"></span>
+        <span class="late" style="width:${Math.round((late / denominator) * 100)}%" title="Closed late: ${late}"></span>
+      </div>
+      <div class="legend-grid">
+        <span><i class="closed"></i>Closed in time: <strong>${inTime}</strong></span>
+        <span><i class="late"></i>Closed late: <strong>${late}</strong></span>
+      </div>
+    </section>
+  `;
+}
+
 function renderDashboard() {
   const list = allowedComplaints();
   const counts = statCounts(list);
@@ -2571,7 +2743,12 @@ function renderDashboard() {
       <article class="stat-card"><h3>Total complaints</h3><p>${counts.total}</p></article>
       <article class="stat-card"><h3>Pending</h3><p>${counts.pending}</p></article>
       <article class="stat-card"><h3>In progress</h3><p>${counts.progress}</p></article>
-      <article class="stat-card"><h3>Resolved</h3><p>${counts.resolved}</p></article>
+      <article class="stat-card"><h3>Closed</h3><p>${counts.closed}</p></article>
+    </div>
+    <div class="grid three" style="margin-top:18px">
+      ${statusChart(list)}
+      ${priorityChart(list)}
+      ${closureChart(list)}
     </div>
     <div style="margin-top:18px">${priorityDurationPanel()}</div>
     ${alerts.length || ["supervisor", "control", "bo", "super", "admin"].includes(state.user.role) ? `<div style="margin-top:18px">${alertPanel(alerts)}</div>` : ""}
@@ -2592,7 +2769,7 @@ function renderDashboard() {
         <h3>Department workload</h3>
         <div class="table-wrap" style="margin-top:14px">
           <table>
-            <thead><tr><th>Department</th><th>Open</th><th>Resolved</th></tr></thead>
+            <thead><tr><th>Department</th><th>Open</th><th>Closed</th></tr></thead>
             <tbody>${departmentRows(list)}</tbody>
           </table>
         </div>
@@ -2606,9 +2783,9 @@ function departmentRows(list) {
   return departments
     .map((dept) => {
       const deptItems = list.filter((item) => item.department === dept);
-      const open = deptItems.filter((item) => item.status !== "Resolved" && item.status !== "Closed").length;
-      const resolved = deptItems.length - open;
-      return `<tr><td>${dept}</td><td>${open}</td><td>${resolved}</td></tr>`;
+      const open = deptItems.filter((item) => item.status !== "Closed").length;
+      const closed = deptItems.filter((item) => item.status === "Closed").length;
+      return `<tr><td>${dept}</td><td>${open}</td><td>${closed}</td></tr>`;
     })
     .join("");
 }
@@ -2707,7 +2884,7 @@ function renderComplaints() {
         <option value="">All status</option>
         <option>Pending</option>
         <option>In Progress</option>
-        <option>Resolved</option>
+        <option>Partial Resolution</option>
         <option>Closed</option>
       </select>
       <select id="deptFilter">
@@ -2754,7 +2931,8 @@ function complaintCard(item) {
 function statusClass(status) {
   if (status === "Pending") return "pending";
   if (status === "In Progress") return "progress";
-  if (status === "Resolved" || status === "Closed") return "resolved";
+  if (status === "Partial Resolution") return "partial";
+  if (status === "Closed") return "resolved";
   return "";
 }
 
@@ -3191,7 +3369,10 @@ function statusControls(item) {
     }
     return "";
   }
-  if (!["control", "bo"].includes(state.user.role)) return "";
+  if (state.user.role === "bo") {
+    return `<p class="muted" style="margin-top:14px">Branch Officer view is read only. No complaint action can be recorded from this ID.</p>`;
+  }
+  if (state.user.role !== "control") return "";
   return `
     <div class="grid" style="margin-top:14px">
       <label>Attending action
@@ -3238,8 +3419,8 @@ function updateAttendingFields() {
 
 async function updateStatus(id) {
   if (statusUpdatesInProgress.has(id)) return;
-  if (!["control", "bo"].includes(state.user.role)) {
-    showToast("Only Control and BO users can resolve complaints.");
+  if (state.user.role !== "control") {
+    showToast("Only Departmental Control users can record complaint actions.");
     return;
   }
   const item = state.complaints.find((complaint) => complaint.id === id);
@@ -3276,7 +3457,7 @@ async function updateStatus(id) {
         ...imageInfo,
       };
     }
-    let newStatus = "In Progress";
+    let newStatus = "Partial Resolution";
     let historyStatus = "Partial Resolution";
     let remark = remarkInput || "Partially attended; further action is pending.";
     if (actionType === "forwardDepartment") {
@@ -3350,13 +3531,14 @@ function reopenComplaint(id) {
 }
 
 function renderDepartmentDesk() {
-  const list = ["admin", "super"].includes(state.user.role) ? state.complaints : allowedComplaints();
+  const list = ["admin", "super", "bo"].includes(state.user.role) ? state.complaints : allowedComplaints();
+  const readOnly = state.user.role === "bo";
   qs("#departmentDesk").innerHTML = `
     <section class="panel">
       <div class="section-title">
         <div>
-          <h3>Department action desk</h3>
-          <p class="muted">Open a complaint to record inspection, action taken, resolution, or closure.</p>
+          <h3>${readOnly ? "Divisional complaint desk" : "Department action desk"}</h3>
+          <p class="muted">${readOnly ? "Open complaints for divisional monitoring. Branch Officer access is view only." : "Open a complaint to record inspection, action taken, forwarding, or closure."}</p>
         </div>
       </div>
       <div class="complaint-list">
@@ -3430,7 +3612,7 @@ function reportSummary(list) {
     received: list.length,
     pending: count("Pending"),
     progress: count("In Progress"),
-    resolved: count("Resolved"),
+    partial: count("Partial Resolution"),
     closed: count("Closed"),
     pct(value) {
       return `${Math.round((value / total) * 100)}%`;
@@ -3445,7 +3627,7 @@ function reportContentHtml(list, summary) {
         ["Received", summary.received],
         ["Pending", `${summary.pending} (${summary.pct(summary.pending)})`],
         ["In Progress", `${summary.progress} (${summary.pct(summary.progress)})`],
-        ["Resolved", `${summary.resolved} (${summary.pct(summary.resolved)})`],
+        ["Partial Resolution", `${summary.partial} (${summary.pct(summary.partial)})`],
         ["Closed", `${summary.closed} (${summary.pct(summary.closed)})`],
       ].map(([label, value]) => `<article class="stat-card"><h3>${label}</h3><p>${value}</p></article>`).join("")}
     </div>
@@ -3455,10 +3637,10 @@ function reportContentHtml(list, summary) {
         <h3>Department-wise bifurcation</h3>
         <div class="table-wrap" style="margin-top:14px">
           <table>
-            <thead><tr><th>Department</th><th>Received</th><th>Pending</th><th>In Progress</th><th>Resolved</th><th>Closed</th><th>Closed in time</th></tr></thead>
+            <thead><tr><th>Department</th><th>Received</th><th>Pending</th><th>In Progress</th><th>Partial</th><th>Closed</th><th>Closed in time</th></tr></thead>
             <tbody>${departments.map((dept) => {
               const deptItems = list.filter((item) => item.department === dept);
-              return `<tr><td>${dept}</td><td>${deptItems.length}</td><td>${deptItems.filter((i) => i.status === "Pending").length}</td><td>${deptItems.filter((i) => i.status === "In Progress").length}</td><td>${deptItems.filter((i) => i.status === "Resolved").length}</td><td>${deptItems.filter((i) => i.status === "Closed").length}</td><td>${deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length}</td></tr>`;
+              return `<tr><td>${dept}</td><td>${deptItems.length}</td><td>${deptItems.filter((i) => i.status === "Pending").length}</td><td>${deptItems.filter((i) => i.status === "In Progress").length}</td><td>${deptItems.filter((i) => i.status === "Partial Resolution").length}</td><td>${deptItems.filter((i) => i.status === "Closed").length}</td><td>${deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length}</td></tr>`;
             }).join("")}</tbody>
           </table>
         </div>
@@ -3492,13 +3674,13 @@ function downloadExcelReport() {
     ["Received", summary.received],
     ["Pending", summary.pending, summary.pct(summary.pending)],
     ["In Progress", summary.progress, summary.pct(summary.progress)],
-    ["Resolved", summary.resolved, summary.pct(summary.resolved)],
+    ["Partial Resolution", summary.partial, summary.pct(summary.partial)],
     ["Closed", summary.closed, summary.pct(summary.closed)],
     [],
-    ["Department", "Received", "Pending", "In Progress", "Resolved", "Closed", "Closed In Time"],
+    ["Department", "Received", "Pending", "In Progress", "Partial", "Closed", "Closed In Time"],
     ...departments.map((dept) => {
       const deptItems = list.filter((item) => item.department === dept);
-      return [dept, deptItems.length, deptItems.filter((i) => i.status === "Pending").length, deptItems.filter((i) => i.status === "In Progress").length, deptItems.filter((i) => i.status === "Resolved").length, deptItems.filter((i) => i.status === "Closed").length, deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length];
+      return [dept, deptItems.length, deptItems.filter((i) => i.status === "Pending").length, deptItems.filter((i) => i.status === "In Progress").length, deptItems.filter((i) => i.status === "Partial Resolution").length, deptItems.filter((i) => i.status === "Closed").length, deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length];
     }),
     [],
     ["ID", "Station", "Department", "Category", "Subject", "Priority", "Status", "Complaint Date", "Complaint Time", "Submitted At", "Due Date", "Last Updated At", "Last Updated By"],
@@ -3515,7 +3697,7 @@ function downloadPdfReport() {
     `Received: ${summary.received}`,
     `Pending: ${summary.pending} (${summary.pct(summary.pending)})`,
     `In Progress: ${summary.progress} (${summary.pct(summary.progress)})`,
-    `Resolved: ${summary.resolved} (${summary.pct(summary.resolved)})`,
+    `Partial Resolution: ${summary.partial} (${summary.pct(summary.partial)})`,
     `Closed: ${summary.closed} (${summary.pct(summary.closed)})`,
     "",
     ...reportRows().slice(0, 35).map((row) => `${row[0]} | ${row[2]} | ${row[5]} | ${row[6]} | ${row[4]}`),
