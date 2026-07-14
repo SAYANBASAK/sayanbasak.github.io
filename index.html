@@ -2261,8 +2261,8 @@ const usersKey = "stationMadadHowrahUsers";
 const inactiveUsersKey = "stationMadadHowrahInactiveUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
 const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
-const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbys2Ypr8OodyLRKhk1H0cOn21RTpyUBlJLYYDTihFa7sw-FmWtOzSAIU8b44nvnDwc/exec";
-const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbwJcXaK_xBvsiqN6dVGI0skxnZPeZ8k0Pyc8D5ADcXGJQ4x_dWGcU6inxw9w833sErX6A/exec";
+const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyFc23Wd1mfLFL2T5bGCVfcZoZRKBGV0J2qhWKLspFjxR7AgqLXOnLksPuKKRTQs6a5pg/exec";
+const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyL4YUoEOFY6QYvww2gEad22DeSpb013NHgTCua6ErwFczIXwLF14XqCmJoNPfgxjaFLQ/exec";
 const legacyWebAppUrls = new Set([
   "https://script.google.com/macros/s/AKfycbwZJecMfBGR1vUk_jHLx37mv9zId5xXexNxbwCvm3K2pmTEA4imqvde08D0XxSLQa9f/exec",
   "https://script.google.com/macros/s/AKfycbyOX6YbHPLfyl4v9nfmMku5Z5SwtECmZhd6COd19un7kvpmHwQXmKQCoSfchE1-Pcuf/exec",
@@ -2272,6 +2272,8 @@ const legacyWebAppUrls = new Set([
   "https://script.google.com/macros/s/AKfycby6WDFbaYwbnt4Ce6TB0TVQqCPykIi5IR4lN-_5Sn6pvfpphy-n8PLVZqc9x9q0IBbxAQ/exec",
   "https://script.google.com/macros/s/AKfycbxJ6Jryp9hyXdIBhR4GwxKihANTO4LRsl9uNLULrghn-0EnnB_l06vl5yBrUjJFyVpS/exec",
   "https://script.google.com/macros/s/AKfycby8C2jIzuCByAvK1_g5e80AijE1lMriCy3ZcU5XgMC31gG7UtpfARNN-GKvk8WtfQRY1Q/exec",
+  "https://script.google.com/macros/s/AKfycbys2Ypr8OodyLRKhk1H0cOn21RTpyUBlJLYYDTihFa7sw-FmWtOzSAIU8b44nvnDwc/exec",
+  "https://script.google.com/macros/s/AKfycbwJcXaK_xBvsiqN6dVGI0skxnZPeZ8k0Pyc8D5ADcXGJQ4x_dWGcU6inxw9w833sErX6A/exec",
 ]);
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 const userGoogleSheetId = "17Ou3oPoEuC_rKovbZzRXGQwYDxAcL05MfR1H1vWUc7Q";
@@ -2784,6 +2786,29 @@ function fileToDataUrl(file) {
   });
 }
 
+function imageToCompressedDataUrl(file, maxSide = 1200, quality = 0.78) {
+  if (!file?.type?.startsWith("image/")) return fileToDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Could not read image."));
+      image.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function driveFileIdFromUrl(url) {
   const value = String(url || "");
   return value.match(/[?&]id=([^&]+)/)?.[1]
@@ -3238,16 +3263,17 @@ async function updateStatus(id) {
     let imageInfo = null;
     let imageInfoForSync = null;
     if (imageFile) {
+      const compressedDataUrl = await imageToCompressedDataUrl(imageFile);
       imageInfo = {
         name: imageFile.name,
-        type: imageFile.type,
-        size: imageFile.size,
+        type: "image/jpeg",
+        size: compressedDataUrl.length,
         uploadedAt: new Date().toISOString(),
         uploadedBy: state.user.name,
+        dataUrl: compressedDataUrl,
       };
       imageInfoForSync = {
         ...imageInfo,
-        dataUrl: await fileToDataUrl(imageFile),
       };
     }
     let newStatus = "In Progress";
