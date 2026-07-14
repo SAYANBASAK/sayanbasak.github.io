@@ -701,6 +701,15 @@ dialog::backdrop {
   font-size: 13px;
 }
 
+.image-preview-frame {
+  display: grid;
+  gap: 6px;
+}
+
+.image-preview-failed {
+  display: none;
+}
+
 .image-open-link {
   width: fit-content;
   color: var(--accent);
@@ -2244,6 +2253,7 @@ let state = {
 let googleSheetSyncTimer = null;
 let captchaAnswer = "";
 let loginRequestId = 0;
+const statusUpdatesInProgress = new Set();
 
 const storageKey = "stationMadadHowrahState";
 const userKey = "stationMadadHowrahUser";
@@ -2784,17 +2794,32 @@ function previewImageUrl(src) {
   return src;
 }
 
+function fullImageUrl(src) {
+  const fileId = driveFileIdFromUrl(src);
+  if (fileId) return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view?usp=sharing`;
+  return src;
+}
+
+function isWebImageLink(src) {
+  return /^https?:\/\//i.test(String(src || ""));
+}
+
 function imagePreviewBlock(title, name, src, meta = "") {
   if (!src) return `<p class="muted">${title}: ${name || "None"}</p>`;
   const previewSrc = previewImageUrl(src);
+  const openSrc = fullImageUrl(src);
+  const openLink = isWebImageLink(openSrc)
+    ? `<a class="image-open-link" href="${escapeHtml(openSrc)}" target="_blank" rel="noopener noreferrer">Open full image</a>`
+    : "";
   return `
     <div class="image-preview-block">
       <strong>${title}: ${escapeHtml(name || "Image")}</strong>
       ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
-      <a href="${escapeHtml(src)}" target="_blank" rel="noopener">
-        <img src="${escapeHtml(previewSrc)}" alt="${escapeHtml(name || title)}" loading="lazy" referrerpolicy="no-referrer" />
-      </a>
-      ${previewSrc !== src ? `<a class="image-open-link" href="${escapeHtml(src)}" target="_blank" rel="noopener">Open full image</a>` : ""}
+      <div class="image-preview-frame">
+        <img src="${escapeHtml(previewSrc)}" alt="${escapeHtml(name || title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.classList.add('image-preview-failed'); this.nextElementSibling.classList.remove('hidden');" />
+        <span class="muted hidden">Preview not available here. Use Open full image.</span>
+      </div>
+      ${openLink}
     </div>
   `;
 }
@@ -2811,7 +2836,7 @@ function attachmentPreview(item) {
 }
 
 function rectificationPreview(item) {
-  const images = item.rectificationImages || [];
+  const images = compactImages(item.rectificationImages || []);
   if (images.length) {
     return images
       .map((image) => imagePreviewBlock("Rectification image", image.name, image.dataUrl || image.url, image.uploadedAt ? `uploaded ${formatDateTime(image.uploadedAt)}` : ""))
@@ -2820,8 +2845,44 @@ function rectificationPreview(item) {
   return item.rectificationImageUrl ? imagePreviewBlock("Rectification image", item.rectificationImageName, item.rectificationImageUrl) : "";
 }
 
+function compactHistory(history = []) {
+  return history.filter((entry, index, list) => {
+    const previous = list[index - 1];
+    return !previous || previous[0] !== entry[0] || previous[1] !== entry[1] || previous[2] !== entry[2];
+  });
+}
+
+function compactImages(images = []) {
+  const seen = new Set();
+  return images.filter((image) => {
+    const key = [
+      image.name || "",
+      image.uploadedAt || "",
+      image.url || "",
+      image.dataUrl ? image.dataUrl.slice(0, 120) : "",
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function complaintVersionTime(item = {}) {
+  return new Date(item.lastUpdatedAt || item.syncedAt || item.submittedAt || item.createdAt || item.complaintDate || 0).getTime() || 0;
+}
+
+function remoteRectificationImages(remote = {}) {
+  if (!remote.rectificationImageUrl) return [];
+  return compactImages([{
+    name: remote.rectificationImageName || "Rectification image",
+    url: remote.rectificationImageUrl,
+    uploadedAt: remote.lastUpdatedAt || remote.syncedAt || "",
+    uploadedBy: remote.lastUpdatedBy || "Google Sheet",
+  }]);
+}
+
 function googleSheetPayload(item, action) {
-  const images = item.rectificationImages || [];
+  const images = compactImages(item.rectificationImages || []);
   const latestImage = images.length ? images[images.length - 1] : null;
   return {
     action,
@@ -2849,6 +2910,8 @@ function googleSheetPayload(item, action) {
     rectificationImageName: latestImage?.name || "",
     rectificationImageDataUrl: latestImage?.dataUrl || "",
     rectificationImageType: latestImage?.type || "",
+    forwardedDivision: item.forwardedDivision || "",
+    historyJson: JSON.stringify(compactHistory(item.history || [])),
   };
 }
 
@@ -2985,11 +3048,16 @@ function mergeComplaints(remoteComplaints) {
   const byId = new Map(state.complaints.map((item) => [item.id, item]));
   remoteComplaints.forEach((remote) => {
     const existing = byId.get(remote.id) || {};
-    byId.set(remote.id, {
-      ...existing,
-      ...remote,
-      history: existing.history?.length ? existing.history : remote.history,
-    });
+    const existingTime = complaintVersionTime(existing);
+    const remoteTime = complaintVersionTime(remote);
+    const keepLocal = existing.id && existingTime > remoteTime;
+    const base = keepLocal ? { ...remote, ...existing } : { ...existing, ...remote };
+    base.history = compactHistory(keepLocal && existing.history?.length ? existing.history : (remote.history?.length ? remote.history : existing.history));
+    base.rectificationImages = compactImages([...(existing.rectificationImages || []), ...remoteRectificationImages(remote)]);
+    byId.set(remote.id, base);
+    if (keepLocal && existing.lastUpdatedAt) {
+      syncComplaintToGoogleSheet(existing, "updated");
+    }
   });
   state.complaints = [...byId.values()].sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
   saveComplaints();
@@ -3051,6 +3119,8 @@ function stopGoogleSheetAutoSync() {
 function openComplaint(id) {
   const item = state.complaints.find((complaint) => complaint.id === id);
   if (!item) return;
+  item.history = compactHistory(item.history || []);
+  item.rectificationImages = compactImages(item.rectificationImages || []);
   qs("#dialogTitle").textContent = item.id;
   qs("#dialogBody").innerHTML = `
     <div class="grid two">
@@ -3078,47 +3148,104 @@ function openComplaint(id) {
 
 function statusControls(item) {
   if (!["control", "bo"].includes(state.user.role)) return "";
-  const options = ["Pending", "In Progress", "Resolved", "Closed"];
   return `
     <div class="grid" style="margin-top:14px">
-      <select id="newStatus">${options.map((status) => `<option ${status === item.status ? "selected" : ""}>${status}</option>`).join("")}</select>
-      <input id="statusRemark" placeholder="Action taken / remarks" />
-      <label>Rectification image<input id="rectificationImage" type="file" accept="image/*" /></label>
+      <label>Attending action
+        <select id="attendingAction">
+          <option value="partial">Partial resolution</option>
+          <option value="forwardDepartment">Forward to other department</option>
+          <option value="forwardDivision">Forward to other division</option>
+          <option value="closed">Closed</option>
+        </select>
+      </label>
+      <label>Forward to department
+        <select id="forwardDepartment">${departments.map((dept) => `<option ${dept === item.department ? "selected" : ""}>${dept}</option>`).join("")}</select>
+      </label>
+      <label>Forward to division
+        <input id="forwardDivision" placeholder="Division name" />
+      </label>
+      <input id="statusRemark" placeholder="Forwarding / action taken remarks" />
+      <label>Image upload<input id="rectificationImage" type="file" accept="image/*" /></label>
       <button class="primary-btn" data-update-status="${item.id}">Update status</button>
     </div>
   `;
 }
 
 async function updateStatus(id) {
+  if (statusUpdatesInProgress.has(id)) return;
   if (!["control", "bo"].includes(state.user.role)) {
     showToast("Only Control and BO users can resolve complaints.");
     return;
   }
   const item = state.complaints.find((complaint) => complaint.id === id);
-  const newStatus = qs("#newStatus").value;
-  const remark = qs("#statusRemark").value || `Marked as ${newStatus}.`;
-  const imageFile = qs("#rectificationImage")?.files?.[0];
-  let imageInfo = null;
-  if (imageFile) {
-    imageInfo = {
-      name: imageFile.name,
-      type: imageFile.type,
-      size: imageFile.size,
-      uploadedAt: new Date().toISOString(),
-      dataUrl: await fileToDataUrl(imageFile),
-      uploadedBy: state.user.name,
-    };
+  if (!item) return;
+  statusUpdatesInProgress.add(id);
+  const updateButton = qs(`[data-update-status="${CSS.escape(id)}"]`);
+  if (updateButton) {
+    updateButton.disabled = true;
+    updateButton.textContent = "Updating...";
   }
-  item.status = newStatus;
-  item.lastUpdatedAt = new Date().toISOString();
-  item.lastUpdatedBy = state.user.name;
-  if (imageInfo) item.rectificationImages = [...(item.rectificationImages || []), imageInfo];
-  item.history.push([newStatus, state.user.name, remark]);
-  saveComplaints();
-  syncComplaintToGoogleSheet(item, "updated");
-  qs("#complaintDialog").close();
-  showToast(`${item.id} updated`);
-  render();
+  const actionType = qs("#attendingAction")?.value || "partial";
+  const forwardedDepartment = qs("#forwardDepartment")?.value || item.department;
+  const forwardedDivision = qs("#forwardDivision")?.value.trim() || "";
+  const remarkInput = qs("#statusRemark")?.value.trim() || "";
+  const imageFile = qs("#rectificationImage")?.files?.[0];
+  try {
+    let imageInfo = null;
+    if (imageFile) {
+      imageInfo = {
+        name: imageFile.name,
+        type: imageFile.type,
+        size: imageFile.size,
+        uploadedAt: new Date().toISOString(),
+        dataUrl: await fileToDataUrl(imageFile),
+        uploadedBy: state.user.name,
+      };
+    }
+    let newStatus = "In Progress";
+    let historyStatus = "Partial Resolution";
+    let remark = remarkInput || "Partially attended; further action is pending.";
+    if (actionType === "forwardDepartment") {
+      newStatus = "In Progress";
+      historyStatus = "Forwarded to Department";
+      item.department = forwardedDepartment;
+      remark = remarkInput || `Forwarded to ${forwardedDepartment}.`;
+    } else if (actionType === "forwardDivision") {
+      newStatus = "In Progress";
+      historyStatus = "Forwarded to Division";
+      item.forwardedDivision = forwardedDivision;
+      remark = remarkInput || `Forwarded to ${forwardedDivision || "other division"}.`;
+    } else if (actionType === "closed") {
+      newStatus = "Closed";
+      historyStatus = "Closed";
+      remark = remarkInput || "Complaint closed after attending the issue.";
+    }
+
+    item.status = newStatus;
+    item.lastUpdatedAt = new Date().toISOString();
+    item.lastUpdatedBy = state.user.name;
+    if (imageInfo) item.rectificationImages = compactImages([...(item.rectificationImages || []), imageInfo]);
+    else item.rectificationImages = compactImages(item.rectificationImages || []);
+    item.history = compactHistory(item.history || []);
+    const lastEntry = item.history[item.history.length - 1];
+    if (!lastEntry || lastEntry[0] !== historyStatus || lastEntry[1] !== state.user.name || lastEntry[2] !== remark) {
+      item.history.push([historyStatus, state.user.name, remark]);
+    }
+    saveComplaints();
+    syncComplaintToGoogleSheet(item, "updated");
+    qs("#complaintDialog").close();
+    showToast(`${item.id} updated`);
+    render();
+  } catch (error) {
+    console.warn("Status update failed", error);
+    showToast("Status update failed. Please try again.");
+    if (updateButton) {
+      updateButton.disabled = false;
+      updateButton.textContent = "Update status";
+    }
+  } finally {
+    statusUpdatesInProgress.delete(id);
+  }
 }
 
 function renderDepartmentDesk() {
