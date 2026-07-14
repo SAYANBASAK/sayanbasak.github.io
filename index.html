@@ -2261,8 +2261,8 @@ const usersKey = "stationMadadHowrahUsers";
 const inactiveUsersKey = "stationMadadHowrahInactiveUsers";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
 const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
-const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbxJ6Jryp9hyXdIBhR4GwxKihANTO4LRsl9uNLULrghn-0EnnB_l06vl5yBrUjJFyVpS/exec";
-const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycby8C2jIzuCByAvK1_g5e80AijE1lMriCy3ZcU5XgMC31gG7UtpfARNN-GKvk8WtfQRY1Q/exec";
+const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbys2Ypr8OodyLRKhk1H0cOn21RTpyUBlJLYYDTihFa7sw-FmWtOzSAIU8b44nvnDwc/exec";
+const defaultUserSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbwJcXaK_xBvsiqN6dVGI0skxnZPeZ8k0Pyc8D5ADcXGJQ4x_dWGcU6inxw9w833sErX6A/exec";
 const legacyWebAppUrls = new Set([
   "https://script.google.com/macros/s/AKfycbwZJecMfBGR1vUk_jHLx37mv9zId5xXexNxbwCvm3K2pmTEA4imqvde08D0XxSLQa9f/exec",
   "https://script.google.com/macros/s/AKfycbyOX6YbHPLfyl4v9nfmMku5Z5SwtECmZhd6COd19un7kvpmHwQXmKQCoSfchE1-Pcuf/exec",
@@ -2270,6 +2270,8 @@ const legacyWebAppUrls = new Set([
   "https://script.google.com/macros/s/AKfycbwF8LIR9CD4iIUmYRxofgrvlPlVs1G5fD0guBQCSaUDUpVoY07mSsifwIWjUuJEpMKU/exec",
   "https://script.google.com/macros/s/AKfycbz1IZwGM1m6DVtTdorIhcBs7xGZ8KPB69prrZ1fXUUSGcRFDP0iNHwC8KNqvu_s3iuQ/exec",
   "https://script.google.com/macros/s/AKfycby6WDFbaYwbnt4Ce6TB0TVQqCPykIi5IR4lN-_5Sn6pvfpphy-n8PLVZqc9x9q0IBbxAQ/exec",
+  "https://script.google.com/macros/s/AKfycbxJ6Jryp9hyXdIBhR4GwxKihANTO4LRsl9uNLULrghn-0EnnB_l06vl5yBrUjJFyVpS/exec",
+  "https://script.google.com/macros/s/AKfycby8C2jIzuCByAvK1_g5e80AijE1lMriCy3ZcU5XgMC31gG7UtpfARNN-GKvk8WtfQRY1Q/exec",
 ]);
 const googleSheetId = "1y24ay-NDtFASf_JcVLf9HwSFcr2y0tavI8YMx57OzU4";
 const userGoogleSheetId = "17Ou3oPoEuC_rKovbZzRXGQwYDxAcL05MfR1H1vWUc7Q";
@@ -3146,9 +3148,24 @@ function openComplaint(id) {
     ${statusControls(item)}
   `;
   qs("#complaintDialog").showModal();
+  updateAttendingFields();
 }
 
 function statusControls(item) {
+  if (item.status === "Closed") {
+    if (state.user.role === "super") {
+      return `
+        <div class="grid" style="margin-top:14px">
+          <input id="reopenRemark" placeholder="Reopen remarks" />
+          <button class="primary-btn" data-reopen-complaint="${item.id}">Reopen complaint to Pending</button>
+        </div>
+      `;
+    }
+    if (["control", "bo"].includes(state.user.role)) {
+      return `<p class="muted" style="margin-top:14px">This complaint is closed and is view only.</p>`;
+    }
+    return "";
+  }
   if (!["control", "bo"].includes(state.user.role)) return "";
   return `
     <div class="grid" style="margin-top:14px">
@@ -3160,17 +3177,38 @@ function statusControls(item) {
           <option value="closed">Closed</option>
         </select>
       </label>
-      <label>Forward to department
+      <label data-attending-field="department">Forward to department
         <select id="forwardDepartment">${departments.map((dept) => `<option ${dept === item.department ? "selected" : ""}>${dept}</option>`).join("")}</select>
       </label>
-      <label>Forward to division
+      <label data-attending-field="division">Forward to division
         <input id="forwardDivision" placeholder="Division name" />
       </label>
-      <input id="statusRemark" placeholder="Forwarding / action taken remarks" />
-      <label>Image upload<input id="rectificationImage" type="file" accept="image/*" /></label>
+      <input id="statusRemark" placeholder="Partial resolution remarks" />
+      <label data-attending-field="image">Image upload<input id="rectificationImage" type="file" accept="image/*" /></label>
       <button class="primary-btn" data-update-status="${item.id}">Update status</button>
     </div>
   `;
+}
+
+function updateAttendingFields() {
+  const action = qs("#attendingAction")?.value || "partial";
+  const fieldRules = {
+    department: action === "forwardDepartment",
+    division: action === "forwardDivision",
+    image: action === "partial" || action === "closed",
+  };
+  qsa("[data-attending-field]").forEach((field) => {
+    field.classList.toggle("hidden", !fieldRules[field.dataset.attendingField]);
+  });
+  const remark = qs("#statusRemark");
+  if (!remark) return;
+  const placeholders = {
+    partial: "Partial resolution remarks",
+    forwardDepartment: "Forwarding remarks",
+    forwardDivision: "Forwarding remarks",
+    closed: "Closing remarks",
+  };
+  remark.placeholder = placeholders[action] || "Remarks";
 }
 
 async function updateStatus(id) {
@@ -3181,6 +3219,10 @@ async function updateStatus(id) {
   }
   const item = state.complaints.find((complaint) => complaint.id === id);
   if (!item) return;
+  if (item.status === "Closed") {
+    showToast("Closed complaints are view only. Super user can reopen to Pending.");
+    return;
+  }
   statusUpdatesInProgress.add(id);
   const updateButton = qs(`[data-update-status="${CSS.escape(id)}"]`);
   if (updateButton) {
@@ -3191,17 +3233,21 @@ async function updateStatus(id) {
   const forwardedDepartment = qs("#forwardDepartment")?.value || item.department;
   const forwardedDivision = qs("#forwardDivision")?.value.trim() || "";
   const remarkInput = qs("#statusRemark")?.value.trim() || "";
-  const imageFile = qs("#rectificationImage")?.files?.[0];
+  const imageFile = ["partial", "closed"].includes(actionType) ? qs("#rectificationImage")?.files?.[0] : null;
   try {
     let imageInfo = null;
+    let imageInfoForSync = null;
     if (imageFile) {
       imageInfo = {
         name: imageFile.name,
         type: imageFile.type,
         size: imageFile.size,
         uploadedAt: new Date().toISOString(),
-        dataUrl: await fileToDataUrl(imageFile),
         uploadedBy: state.user.name,
+      };
+      imageInfoForSync = {
+        ...imageInfo,
+        dataUrl: await fileToDataUrl(imageFile),
       };
     }
     let newStatus = "In Progress";
@@ -3234,7 +3280,10 @@ async function updateStatus(id) {
       item.history.push([historyStatus, state.user.name, remark]);
     }
     saveComplaints();
-    syncComplaintToGoogleSheet(item, "updated");
+    const syncItem = imageInfoForSync
+      ? { ...item, rectificationImages: compactImages([...(item.rectificationImages || []), imageInfoForSync]) }
+      : item;
+    syncComplaintToGoogleSheet(syncItem, "updated");
     qs("#complaintDialog").close();
     showToast(`${item.id} updated`);
     render();
@@ -3248,6 +3297,30 @@ async function updateStatus(id) {
   } finally {
     statusUpdatesInProgress.delete(id);
   }
+}
+
+function reopenComplaint(id) {
+  if (state.user.role !== "super") {
+    showToast("Only super user can reopen closed complaints.");
+    return;
+  }
+  const item = state.complaints.find((complaint) => complaint.id === id);
+  if (!item) return;
+  if (item.status !== "Closed") {
+    showToast("Only closed complaints can be reopened.");
+    return;
+  }
+  const remark = qs("#reopenRemark")?.value.trim() || "Reopened by super user for further action.";
+  item.status = "Pending";
+  item.lastUpdatedAt = new Date().toISOString();
+  item.lastUpdatedBy = state.user.name;
+  item.history = compactHistory(item.history || []);
+  item.history.push(["Reopened", state.user.name, remark]);
+  saveComplaints();
+  syncComplaintToGoogleSheet(item, "updated");
+  qs("#complaintDialog").close();
+  showToast(`${item.id} reopened to Pending`);
+  render();
 }
 
 function renderDepartmentDesk() {
@@ -4165,6 +4238,7 @@ function render() {
 document.addEventListener("click", (event) => {
   const openId = event.target.closest("[data-open]")?.dataset.open;
   const updateId = event.target.closest("[data-update-status]")?.dataset.updateStatus;
+  const reopenId = event.target.closest("[data-reopen-complaint]")?.dataset.reopenComplaint;
   const jump = event.target.closest("[data-jump]")?.dataset.jump;
   const saveUserId = event.target.closest("[data-save-user]")?.dataset.saveUser;
   const deleteUserId = event.target.closest("[data-delete-user]")?.dataset.deleteUser;
@@ -4184,6 +4258,7 @@ document.addEventListener("click", (event) => {
   const resyncAttachmentId = event.target.closest("[data-resync-attachment]")?.dataset.resyncAttachment;
   if (openId) openComplaint(openId);
   if (updateId) updateStatus(updateId);
+  if (reopenId) reopenComplaint(reopenId);
   if (jump) setView(jump);
   if (saveUserId) saveEditedUser(saveUserId);
   if (deleteUserId) deleteUser(deleteUserId);
@@ -4204,6 +4279,10 @@ document.addEventListener("click", (event) => {
   if (applyUserFilter) updateUserFilter(applyUserFilter);
   if (resetUserFilterId) resetUserFilter(resetUserFilterId);
   if (resyncAttachmentId) resyncAttachment(resyncAttachmentId);
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target?.id === "attendingAction") updateAttendingFields();
 });
 
 qs("#loginForm").addEventListener("submit", (event) => {
