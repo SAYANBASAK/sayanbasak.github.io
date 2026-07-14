@@ -3662,10 +3662,7 @@ function downloadBlob(content, filename, type) {
 }
 
 function makeSimplePdf(lines) {
-  const safe = (text) => String(text).replace(/[^\x20-\x7E]/g, "?").replace(/[()\\]/g, "\\
-
-    <script src="station-data.js"></script>
-    <script src="app.js"></script>").slice(0, 110);
+  const safe = (text) => String(text).replace(/[^\x20-\x7E]/g, "?").replace(/[()\\]/g, "\\$&").slice(0, 110);
   const content = lines.map((line, index) => `BT /F1 10 Tf 40 ${780 - index * 16} Td (${safe(line)}) Tj ET`).join("\n");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
