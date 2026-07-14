@@ -3000,6 +3000,7 @@ function attachmentPreview(item) {
 }
 
 function rectificationPreview(item) {
+  if (!hasRectificationAction(item)) return "";
   const images = compactImages(item.rectificationImages || []);
   if (images.length) {
     return images
@@ -3034,6 +3035,7 @@ function complaintVersionTime(item = {}) {
 }
 
 function remoteRectificationImages(remote = {}) {
+  if (!hasRectificationAction(remote)) return [];
   if (!remote.rectificationImageUrl) return [];
   return compactImages([{
     name: remote.rectificationImageName || "Rectification image",
@@ -3044,7 +3046,8 @@ function remoteRectificationImages(remote = {}) {
 }
 
 function googleSheetPayload(item, action) {
-  const images = compactImages(item.rectificationImages || []);
+  const canSendRectification = hasRectificationAction(item);
+  const images = canSendRectification ? compactImages(item.rectificationImages || []) : [];
   const latestImage = images.length ? images[images.length - 1] : null;
   return {
     action,
@@ -3075,6 +3078,15 @@ function googleSheetPayload(item, action) {
     forwardedDivision: item.forwardedDivision || "",
     historyJson: JSON.stringify(compactHistory(item.history || [])),
   };
+}
+
+function hasRectificationAction(item = {}) {
+  const status = String(item.status || "").toLowerCase();
+  if (status === "closed" || status === "partial resolution") return true;
+  return compactHistory(item.history || []).some(([action]) => {
+    const normalized = String(action || "").toLowerCase();
+    return normalized === "closed" || normalized === "partial resolution";
+  });
 }
 
 async function syncComplaintToGoogleSheet(item, action) {
@@ -3215,7 +3227,13 @@ function mergeComplaints(remoteComplaints) {
     const keepLocal = existing.id && existingTime > remoteTime;
     const base = keepLocal ? { ...remote, ...existing } : { ...existing, ...remote };
     base.history = compactHistory(keepLocal && existing.history?.length ? existing.history : (remote.history?.length ? remote.history : existing.history));
-    base.rectificationImages = compactImages([...(existing.rectificationImages || []), ...remoteRectificationImages(remote)]);
+    base.rectificationImages = hasRectificationAction(base)
+      ? compactImages([...(existing.rectificationImages || []), ...remoteRectificationImages(remote)])
+      : [];
+    if (!hasRectificationAction(base)) {
+      base.rectificationImageName = "";
+      base.rectificationImageUrl = "";
+    }
     byId.set(remote.id, base);
     if (keepLocal && existing.lastUpdatedAt) {
       syncComplaintToGoogleSheet(existing, "updated");
