@@ -980,7 +980,7 @@ dialog::backdrop {
           </label>
           <p id="loginError" class="form-error" role="alert"></p>
           <button class="primary-btn" type="submit">Login</button>
-          <small class="build-version">Build: 15 Jul 2026, 00:05 IST</small>
+          <small class="build-version">Build: 16 Jul 2026, 00:10 IST</small>
         </form>
         <script>
           (function () {
@@ -2289,8 +2289,8 @@ const userKey = "stationMadadHowrahUser";
 const usersKey = "stationMadadHowrahUsers";
 const inactiveUsersKey = "stationMadadHowrahInactiveUsers";
 const resetVersionKey = "stationMadadHowrahResetVersion";
-const dataResetVersion = "2026-07-14-hwh-live-testing-reset-1825";
-const liveComplaintCutoffAt = "2026-07-14T18:25:00+05:30";
+const dataResetVersion = "2026-07-16-clear-old-complaint-cache";
+const liveComplaintCutoffAt = "2026-07-16T00:00:00+05:30";
 const sheetsUrlKey = "stationMadadHowrahSheetsWebAppUrl";
 const userSheetsUrlKey = "stationMadadHowrahUserSheetsWebAppUrl";
 const defaultSheetsWebAppUrl = "https://script.google.com/macros/s/AKfycbyN4rIvX8WDTC9WL5_0iEPR901iuQ1BOJBLD50MAykrXSVgFEKykMBxvX1diaSeubi9/exec";
@@ -2326,7 +2326,8 @@ function loadState() {
     localStorage.setItem(resetVersionKey, dataResetVersion);
   }
   const saved = localStorage.getItem(storageKey);
-  state.complaints = saved ? JSON.parse(saved) : seedComplaints;
+  state.complaints = (saved ? JSON.parse(saved) : seedComplaints).filter(isLiveComplaint);
+  saveComplaints();
   const savedUsers = localStorage.getItem(usersKey);
   state.users = savedUsers ? { ...demoUsers, ...JSON.parse(savedUsers) } : demoUsers;
   const savedInactiveUsers = localStorage.getItem(inactiveUsersKey);
