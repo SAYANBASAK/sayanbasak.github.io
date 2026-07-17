@@ -436,6 +436,13 @@ textarea:focus {
   font-weight: 900;
 }
 
+.stat-card span {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -3660,12 +3667,16 @@ function filteredReportComplaints() {
 function reportSummary(list) {
   const total = list.length || 1;
   const count = (status) => list.filter((item) => item.status === status).length;
+  const closedItems = list.filter((item) => item.status === "Closed");
+  const avgCloseMs = averageCloseMs(closedItems);
   return {
     received: list.length,
     pending: count("Pending"),
     progress: count("In Progress"),
     partial: count("Partial Resolution"),
     closed: count("Closed"),
+    avgCloseMs,
+    avgCloseLabel: formatDuration(avgCloseMs),
     pct(value) {
       return `${Math.round((value / total) * 100)}%`;
     },
@@ -3673,6 +3684,7 @@ function reportSummary(list) {
 }
 
 function reportContentHtml(list, summary) {
+  const highlights = reportHighlights(list);
   return `
     <div class="grid five report-summary">
       ${[
@@ -3683,16 +3695,23 @@ function reportContentHtml(list, summary) {
         ["Closed", `${summary.closed} (${summary.pct(summary.closed)})`],
       ].map(([label, value]) => `<article class="stat-card"><h3>${label}</h3><p>${value}</p></article>`).join("")}
     </div>
+    <div class="grid four report-summary" style="margin-top:18px">
+      <article class="stat-card"><h3>Avg close time</h3><p>${summary.avgCloseLabel}</p><span class="muted">Division overall</span></article>
+      <article class="stat-card"><h3>Top station</h3><p>${escapeHtml(highlights.topStation.label)}</p><span class="muted">${highlights.topStation.count} complaints (${highlights.topStation.percent})</span></article>
+      <article class="stat-card"><h3>Top section</h3><p>${escapeHtml(highlights.topSection.label)}</p><span class="muted">${highlights.topSection.count} complaints (${highlights.topSection.percent})</span></article>
+      <article class="stat-card"><h3>Top department</h3><p>${escapeHtml(highlights.topDepartment.label)}</p><span class="muted">${highlights.topDepartment.count} complaints (${highlights.topDepartment.percent})</span></article>
+    </div>
     <div class="grid two" style="margin-top:18px">
       ${departmentChart(list)}
       <section class="panel">
         <h3>Department-wise bifurcation</h3>
         <div class="table-wrap" style="margin-top:14px">
           <table>
-            <thead><tr><th>Department</th><th>Received</th><th>Pending</th><th>In Progress</th><th>Partial</th><th>Closed</th><th>Closed in time</th></tr></thead>
+            <thead><tr><th>Department</th><th>Received</th><th>%</th><th>Pending</th><th>In Progress</th><th>Partial</th><th>Closed</th><th>Closed in time</th><th>Avg close time</th></tr></thead>
             <tbody>${departments.map((dept) => {
               const deptItems = list.filter((item) => item.department === dept);
-              return `<tr><td>${dept}</td><td>${deptItems.length}</td><td>${deptItems.filter((i) => i.status === "Pending").length}</td><td>${deptItems.filter((i) => i.status === "In Progress").length}</td><td>${deptItems.filter((i) => i.status === "Partial Resolution").length}</td><td>${deptItems.filter((i) => i.status === "Closed").length}</td><td>${deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length}</td></tr>`;
+              const closedItems = deptItems.filter((i) => i.status === "Closed");
+              return `<tr><td>${dept}</td><td>${deptItems.length}</td><td>${percentOf(deptItems.length, list.length)}</td><td>${deptItems.filter((i) => i.status === "Pending").length}</td><td>${deptItems.filter((i) => i.status === "In Progress").length}</td><td>${deptItems.filter((i) => i.status === "Partial Resolution").length}</td><td>${closedItems.length}</td><td>${closedItems.filter(isWithinTime).length}</td><td>${formatDuration(averageCloseMs(closedItems))}</td></tr>`;
             }).join("")}</tbody>
           </table>
         </div>
@@ -3707,6 +3726,61 @@ function reportContentHtml(list, summary) {
   `;
 }
 
+function reportHighlights(list) {
+  return {
+    topStation: topComplaintGroup(list, (item) => item.station || "Not recorded"),
+    topSection: topComplaintGroup(list, (item) => stationSectionLabel(item.station || "")),
+    topDepartment: topComplaintGroup(list, (item) => item.department || "Not recorded"),
+  };
+}
+
+function topComplaintGroup(list, getKey) {
+  const counts = new Map();
+  list.forEach((item) => {
+    const key = getKey(item) || "Not recorded";
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  const [label = "No complaints", count = 0] = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
+  return { label, count, percent: percentOf(count, list.length) };
+}
+
+function stationSectionLabel(station) {
+  const code = String(station).split(" - ")[0].trim();
+  if (["HWH", "LLH", "BEQ", "BLY", "UPA", "KOG", "RIS", "SRP", "SHE", "BHR", "CGR", "CNS", "BDC"].includes(code)) return "HWH-BDC Main Line";
+  if (["BDC", "ADST", "MUG", "TLO", "BSAE", "IPRA", "KQU", "KJU", "DMLE", "BGAE", "SOAE", "BHLA", "GPAE", "ABKA", "BGRA", "DTAE", "NDIM", "SMAE", "KLNT", "NDAE", "VSPR", "BFZ", "PSAE", "MTFA", "LKX", "BQY", "PTAE", "AGAE", "SHBA", "DHAE", "KWAE", "NBKH", "SPS", "NDF", "SALE", "JHBN", "GGLE", "ABGM", "SBTL", "MGLE", "KWF", "KTLR", "KNSN", "JVT", "BPD", "BPC", "CSZ", "BEB", "SGV", "NBPH", "BFT", "BWN"].includes(code)) return "Bandel-Katwa/Barddhaman Section";
+  if (["HWH", "LLH", "TKNG", "BZL", "BESY", "BRMH", "BLYC", "BLYH", "RCD", "CCRL", "TPKR", "HMZ", "UPA"].includes(code)) return "Howrah Suburban/Chord Section";
+  return "Other Howrah Division Section";
+}
+
+function averageCloseMs(items) {
+  const durations = items
+    .map((item) => closeDurationMs(item))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  if (!durations.length) return null;
+  return Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length);
+}
+
+function closeDurationMs(item) {
+  const start = new Date(item.submittedAt || item.createdAt || item.complaintDate || 0).getTime();
+  const end = new Date(item.lastUpdatedAt || item.syncedAt || 0).getTime();
+  return end - start;
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "Not available";
+  const totalMinutes = Math.round(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const hhmm = `${String(hours + days * 24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return `${hhmm} (${days} day${days === 1 ? "" : "s"})`;
+}
+
+function percentOf(value, total) {
+  if (!total) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
+}
+
 function refreshReport() {
   const list = filteredReportComplaints();
   qs("#reportContent").innerHTML = reportContentHtml(list, reportSummary(list));
@@ -3719,6 +3793,7 @@ function reportRows() {
 function downloadExcelReport() {
   const list = filteredReportComplaints();
   const summary = reportSummary(list);
+  const highlights = reportHighlights(list);
   const rows = [
     ["StationMadad Howrah Report"],
     [],
@@ -3728,11 +3803,16 @@ function downloadExcelReport() {
     ["In Progress", summary.progress, summary.pct(summary.progress)],
     ["Partial Resolution", summary.partial, summary.pct(summary.partial)],
     ["Closed", summary.closed, summary.pct(summary.closed)],
+    ["Average Close Time", summary.avgCloseLabel],
+    ["Top Station", highlights.topStation.label, highlights.topStation.count, highlights.topStation.percent],
+    ["Top Section", highlights.topSection.label, highlights.topSection.count, highlights.topSection.percent],
+    ["Top Department", highlights.topDepartment.label, highlights.topDepartment.count, highlights.topDepartment.percent],
     [],
-    ["Department", "Received", "Pending", "In Progress", "Partial", "Closed", "Closed In Time"],
+    ["Department", "Received", "Percent", "Pending", "In Progress", "Partial", "Closed", "Closed In Time", "Average Close Time"],
     ...departments.map((dept) => {
       const deptItems = list.filter((item) => item.department === dept);
-      return [dept, deptItems.length, deptItems.filter((i) => i.status === "Pending").length, deptItems.filter((i) => i.status === "In Progress").length, deptItems.filter((i) => i.status === "Partial Resolution").length, deptItems.filter((i) => i.status === "Closed").length, deptItems.filter((i) => i.status === "Closed" && isWithinTime(i)).length];
+      const closedItems = deptItems.filter((i) => i.status === "Closed");
+      return [dept, deptItems.length, percentOf(deptItems.length, list.length), deptItems.filter((i) => i.status === "Pending").length, deptItems.filter((i) => i.status === "In Progress").length, deptItems.filter((i) => i.status === "Partial Resolution").length, closedItems.length, closedItems.filter(isWithinTime).length, formatDuration(averageCloseMs(closedItems))];
     }),
     [],
     ["ID", "Station", "Department", "Category", "Subject", "Priority", "Status", "Complaint Date", "Complaint Time", "Submitted At", "Due Date", "Last Updated At", "Last Updated By"],
@@ -3743,7 +3823,9 @@ function downloadExcelReport() {
 }
 
 function downloadPdfReport() {
-  const summary = reportSummary(filteredReportComplaints());
+  const list = filteredReportComplaints();
+  const summary = reportSummary(list);
+  const highlights = reportHighlights(list);
   const lines = [
     "StationMadad Howrah Report",
     `Received: ${summary.received}`,
@@ -3751,6 +3833,10 @@ function downloadPdfReport() {
     `In Progress: ${summary.progress} (${summary.pct(summary.progress)})`,
     `Partial Resolution: ${summary.partial} (${summary.pct(summary.partial)})`,
     `Closed: ${summary.closed} (${summary.pct(summary.closed)})`,
+    `Average Close Time: ${summary.avgCloseLabel}`,
+    `Top Station: ${highlights.topStation.label} (${highlights.topStation.count}, ${highlights.topStation.percent})`,
+    `Top Section: ${highlights.topSection.label} (${highlights.topSection.count}, ${highlights.topSection.percent})`,
+    `Top Department: ${highlights.topDepartment.label} (${highlights.topDepartment.count}, ${highlights.topDepartment.percent})`,
     "",
     ...reportRows().slice(0, 35).map((row) => `${row[0]} | ${row[2]} | ${row[5]} | ${row[6]} | ${row[4]}`),
   ];
