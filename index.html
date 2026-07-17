@@ -273,6 +273,18 @@ textarea:focus {
   color: white;
 }
 
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sidebar-overlay,
+.close-menu-btn {
+  display: none;
+}
+
 .sidebar .brand-emblem {
   background: var(--notice-yellow);
   color: #122033;
@@ -866,7 +878,7 @@ dialog::backdrop {
   font-weight: 800;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1100px) {
   .login-shell,
   .app-shell {
     grid-template-columns: 1fr;
@@ -879,18 +891,45 @@ dialog::backdrop {
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
-    z-index: 4;
-    width: 270px;
+    z-index: 20;
+    width: min(82vw, 300px);
+    max-width: 300px;
+    height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
+    box-shadow: 18px 0 40px rgba(15, 23, 42, 0.28);
   }
 
   .sidebar.open {
     transform: translateX(0);
   }
 
+  .close-menu-btn {
+    display: inline-flex;
+    color: #d9e7f7;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    display: none;
+    border: 0;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  .app-shell.sidebar-open .sidebar-overlay {
+    display: block;
+  }
+
   .menu-btn {
     display: inline-flex;
+    flex: 0 0 auto;
   }
 
   .grid.two,
@@ -915,11 +954,20 @@ dialog::backdrop {
 
   .topbar {
     align-items: flex-start;
+    gap: 10px;
   }
 
   .topbar-actions {
     flex-direction: column;
     align-items: flex-end;
+    gap: 6px;
+  }
+
+  .user-badge,
+  .secondary-btn {
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: 0.84rem;
   }
 
   .complaint-card {
@@ -980,7 +1028,7 @@ dialog::backdrop {
           </label>
           <p id="loginError" class="form-error" role="alert"></p>
           <button class="primary-btn" type="submit">Login</button>
-          <small class="build-version">Build: 16 Jul 2026, 00:10 IST</small>
+          <small class="build-version">Build: 17 Jul 2026, 13:25 IST</small>
         </form>
         <script>
           (function () {
@@ -1004,12 +1052,15 @@ dialog::backdrop {
 
     <div id="appShell" class="app-shell hidden">
       <aside class="sidebar">
-        <div class="brand-mark">
-          <div class="brand-emblem">SM</div>
-          <div>
-            <strong>StationMadad</strong>
-            <small>Howrah Division</small>
+        <div class="sidebar-head">
+          <div class="brand-mark">
+            <div class="brand-emblem">SM</div>
+            <div>
+              <strong>StationMadad</strong>
+              <small>Howrah Division</small>
+            </div>
           </div>
+          <button id="closeMenuBtn" class="icon-btn close-menu-btn" aria-label="Close menu">x</button>
         </div>
 
         <nav class="nav-list" aria-label="Main navigation">
@@ -1022,6 +1073,7 @@ dialog::backdrop {
           <button data-view="userManagement">User Control</button>
         </nav>
       </aside>
+      <button id="sidebarOverlay" class="sidebar-overlay" aria-label="Close menu"></button>
 
       <div class="work-area">
         <header class="topbar">
@@ -4488,10 +4540,28 @@ qs("#loginForm").addEventListener("submit", (event) => {
   login(qs("#username").value.trim(), qs("#password").value.trim());
 });
 
-qsa(".nav-list button").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+function openMobileMenu() {
+  qs(".sidebar").classList.add("open");
+  qs("#appShell").classList.add("sidebar-open");
+}
+
+function closeMobileMenu() {
+  qs(".sidebar").classList.remove("open");
+  qs("#appShell").classList.remove("sidebar-open");
+}
+
+qsa(".nav-list button").forEach((button) => button.addEventListener("click", () => {
+  setView(button.dataset.view);
+  closeMobileMenu();
+}));
 qs("#logoutBtn").addEventListener("click", logout);
 qs("#closeDialog").addEventListener("click", () => qs("#complaintDialog").close());
-qs("#menuBtn").addEventListener("click", () => qs(".sidebar").classList.toggle("open"));
+qs("#menuBtn").addEventListener("click", openMobileMenu);
+qs("#closeMenuBtn").addEventListener("click", closeMobileMenu);
+qs("#sidebarOverlay").addEventListener("click", closeMobileMenu);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMobileMenu();
+});
 qs("#togglePassword").addEventListener("click", () => {
   const password = qs("#password");
   password.type = password.type === "password" ? "text" : "password";
